@@ -12571,31 +12571,13 @@ DEFAULT_USERS = {
         "role": "admin",
         "created_at": "2026-11-05 08:00:00"
     },
-    "ttc11": {
-        "email": "ttc11@gmail.com",
-        "name": "Trạm Thi Công TTC11",
-        "password": "TTC11@2026",
+    "letruonggdct6nt@gmail.com": {
+        "email": "letruonggdct6nt@gmail.com",
+        "name": "Lê Trường (QC TTC11)",
+        "password": "QC@2026",
         "status": "approved",
         "sites": ["TTC11"],
-        "role": "user",
-        "created_at": "2026-11-05 08:00:00"
-    },
-    "ttc15": {
-        "email": "ttc15@gmail.com",
-        "name": "Trạm Thi Công TTC15",
-        "password": "TTC15@2026",
-        "status": "approved",
-        "sites": ["TTC15"],
-        "role": "user",
-        "created_at": "2026-11-05 08:00:00"
-    },
-    "ttc15a": {
-        "email": "ttc15a@gmail.com",
-        "name": "Trạm Thi Công TTC15A",
-        "password": "TTC15A@2026",
-        "status": "approved",
-        "sites": ["TTC15A"],
-        "role": "user",
+        "role": "qc",
         "created_at": "2026-11-05 08:00:00"
     }
 }
@@ -12608,10 +12590,14 @@ def load_users() -> dict[str, dict[str, object]]:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict) and data:
-                    # Ensure status field exists on all
+                    # Remove legacy non-Gmail accounts
+                    for old_k in ("ttc11", "ttc15", "ttc15a"):
+                        data.pop(old_k, None)
                     for k, v in data.items():
                         if "status" not in v:
                             v["status"] = "approved"
+                        if "role" not in v:
+                            v["role"] = "guest"
                     return data
         except Exception:
             pass
@@ -12655,6 +12641,21 @@ def authenticate_user(identity: str, password: str) -> tuple[dict[str, object] |
         "sites": u.get("sites", []),
         "status": status
     }, ""
+
+def check_role_permission(user: dict[str, object] | None, allowed_roles: tuple[str, ...]) -> tuple[bool, str]:
+    if not user:
+        return False, "Vui lòng đăng nhập để tiếp tục."
+    role = str(user.get("role", "guest")).lower()
+    if role not in allowed_roles:
+        role_names = {
+            "admin": "Quản trị viên (Admin)",
+            "qc": "Kỹ sư QC",
+            "construction": "Thi công",
+            "guest": "Khách (Chỉ xem)"
+        }
+        name = role_names.get(role, role)
+        return False, f"Tài khoản vai trò '{name}' không có quyền thực hiện thao tác này."
+    return True, ""
 
 def check_site_permission(user: dict[str, object] | None, site: str) -> bool:
     if not user:
@@ -12894,12 +12895,15 @@ class FomeHandler(BaseHTTPRequestHandler):
                 self.send_json(400, {"error": f"Địa chỉ Gmail '{email}' đã được đăng ký trên hệ thống."})
                 return
 
+            requested_role = str(data.get("role", "qc")).strip().lower()
+            if requested_role not in ("admin", "qc", "construction", "guest"):
+                requested_role = "qc"
             users[email] = {
                 "email": email,
                 "name": name,
                 "password": password,
                 "status": "pending",
-                "role": "user",
+                "role": requested_role,
                 "sites": requested_sites if isinstance(requested_sites, list) else [],
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
@@ -12949,12 +12953,21 @@ class FomeHandler(BaseHTTPRequestHandler):
                 self.send_json(404, {"error": "Không tìm thấy người dùng."})
                 return
 
-            if new_status:
-                users[target_id]["status"] = str(new_status)
-            if new_sites is not None and isinstance(new_sites, list):
-                users[target_id]["sites"] = new_sites
-            if new_role:
-                users[target_id]["role"] = str(new_role)
+            if target_id == "letruong28491@gmail.com":
+                users[target_id]["status"] = "approved"
+                users[target_id]["role"] = "admin"
+                users[target_id]["sites"] = ["*"]
+            else:
+                if new_status:
+                    users[target_id]["status"] = str(new_status)
+                if new_sites is not None and isinstance(new_sites, list):
+                    users[target_id]["sites"] = new_sites
+                if new_role:
+                    clean_role = str(new_role).strip().lower()
+                    if clean_role in ("admin", "qc", "construction", "guest"):
+                        users[target_id]["role"] = clean_role
+                        if clean_role == "admin" and not users[target_id].get("sites"):
+                            users[target_id]["sites"] = ["*"]
 
             save_users(users)
 
@@ -12963,7 +12976,7 @@ class FomeHandler(BaseHTTPRequestHandler):
                 if s_user.get("username") == target_id or s_user.get("email") == target_id:
                     s_user["status"] = users[target_id].get("status", "approved")
                     s_user["sites"] = users[target_id].get("sites", [])
-                    s_user["role"] = users[target_id].get("role", "user")
+                    s_user["role"] = users[target_id].get("role", "guest")
 
             self.send_json(200, {
                 "success": True,
@@ -13438,9 +13451,17 @@ class FomeHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def handle_upload_drawing(self) -> None:
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
         try:
             fields, uploads = read_multipart(self)
             location = validate_site_code(fields.get("location", DEFAULT_SITE), True)
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền nạp bản vẽ cho trạm {location}."})
+                return
             if not uploads:
                 raise UserError("Vui lòng chọn file bản vẽ PDF để tải lên.")
             filename, content = uploads[0]
@@ -13473,12 +13494,19 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(exc)})
 
     def handle_upload(self) -> None:
-
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
         try:
 
             fields, uploads = read_multipart(self)
 
             location = validate_site_code(fields.get("location", DEFAULT_SITE), True)
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền tải file lên trạm {location}."})
+                return
 
             key = fields.get("source", "")
 
@@ -13585,7 +13613,11 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Không tạo được hồ sơ vị trí: {exc}"})
 
     def handle_save_site_config(self) -> None:
-
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
         try:
 
             content_length = int(self.headers.get("Content-Length", "0"))
@@ -13641,12 +13673,19 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Không lưu được cấu hình: {exc}"})
 
     def handle_template_upload(self) -> None:
-
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
         try:
 
             fields, uploads = read_multipart(self)
 
             location = validate_site_code(fields.get("location", DEFAULT_SITE), True)
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền cập nhật biểu mẫu cho trạm {location}."})
+                return
 
             family = fields.get("family", "")
 
@@ -13788,6 +13827,22 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             location = validate_site_code(payload.get("location", DEFAULT_SITE), True)
 
+            user = self.get_current_user()
+            if not user:
+                self.send_json(401, {"error": "Vui lòng đăng nhập để xuất báo cáo."})
+                return
+            u_role = str(user.get("role", "guest")).lower()
+            if u_role == "guest":
+                self.send_json(403, {"error": "Tài khoản quyền 'Khách' chỉ có quyền xem dữ liệu và tiến độ, không có quyền xuất hoặc tải báo cáo."})
+                return
+            ok, err = check_role_permission(user, ("admin", "qc", "construction"))
+            if not ok:
+                self.send_json(403, {"error": err})
+                return
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền xuất báo cáo cho trạm {location}."})
+                return
+
             path, download_name = create_download(selected_ids, mode, location)
 
             content_type = (
@@ -13843,7 +13898,11 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Không tạo được biểu mẫu: {exc}"})
 
     def handle_fix_station_code(self) -> None:
-
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
         try:
 
             content_length = int(self.headers.get("Content-Length", "0"))

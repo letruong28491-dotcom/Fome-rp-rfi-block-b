@@ -1,31 +1,4 @@
 {
-  "ttc11": {
-    "password": "TTC11@2026",
-    "name": "Trạm Thi Công TTC11",
-    "sites": [
-      "TTC11"
-    ],
-    "role": "user",
-    "status": "approved"
-  },
-  "ttc15": {
-    "password": "TTC15@2026",
-    "name": "Trạm Thi Công TTC15",
-    "sites": [
-      "TTC15"
-    ],
-    "role": "user",
-    "status": "approved"
-  },
-  "ttc15a": {
-    "password": "TTC15A@2026",
-    "name": "Trạm Thi Công TTC15A",
-    "sites": [
-      "TTC15A"
-    ],
-    "role": "user",
-    "status": "approved"
-  },
   "letruong28491@gmail.com": {
     "email": "letruong28491@gmail.com",
     "name": "Quản Trị Viên (Lê Trường)",
@@ -35,6 +8,17 @@
       "*"
     ],
     "role": "admin",
+    "created_at": "2026-11-05 08:00:00"
+  },
+  "letruonggdct6nt@gmail.com": {
+    "email": "letruonggdct6nt@gmail.com",
+    "name": "Lê Trường (QC TTC11)",
+    "password": "QC@2026",
+    "status": "approved",
+    "sites": [
+      "TTC11"
+    ],
+    "role": "qc",
     "created_at": "2026-11-05 08:00:00"
   }
 }

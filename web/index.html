@@ -893,6 +893,14 @@
           <input id="reg-password" type="password" placeholder="Tối thiểu 6 ký tự" minlength="6" required>
         </div>
         <div class="login-field">
+          <label for="reg-role">Vị trí / Quyền đăng ký</label>
+          <select id="reg-role" style="width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 13.5px; background: white;">
+            <option value="qc">Kỹ sư QC (Nạp biểu mẫu &amp; Xuất báo cáo)</option>
+            <option value="construction">Đội ngũ Thi công (Xuất &amp; Tải báo cáo)</option>
+            <option value="guest">Khách / Giám sát (Chỉ xem tiến độ &amp; dữ liệu)</option>
+          </select>
+        </div>
+        <div class="login-field">
           <label>Đăng ký quyền trạm thi công</label>
           <div class="site-checkboxes" id="reg-site-options" style="margin-top: 6px;">
             <label><input type="checkbox" name="reg_site" value="TTC11" checked> TTC11</label>
@@ -1085,6 +1093,9 @@
 
       <!-- ================= PANE 2: NHẬP DỮ LIỆU ================= -->
       <div id="pane-data" class="tab-pane">
+        <div id="data-permission-warning" class="login-error-msg" style="display:none; margin-bottom: 16px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a;">
+          ⚠️ <strong>Giới hạn phân quyền:</strong> Tài khoản vai trò <strong id="data-role-label"></strong> không có quyền tải lên hoặc thay đổi file dữ liệu nguồn (chỉ dành cho Admin &amp; QC).
+        </div>
         <div class="notice">
           <strong>Chạy riêng trên máy này.</strong>
           File không được gửi lên Internet. Dữ liệu tra cứu được điền thành giá trị tĩnh; các công thức số đo trong mẫu RP được giữ nguyên.
@@ -1136,6 +1147,9 @@
 
       <!-- ================= PANE 3: NHẬP BIỂU MẪU ================= -->
       <div id="pane-templates" class="tab-pane">
+        <div id="template-permission-warning" class="login-error-msg" style="display:none; margin-bottom: 16px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a;">
+          ⚠️ <strong>Giới hạn phân quyền:</strong> Tài khoản vai trò <strong id="template-role-label"></strong> không có quyền tải lên biểu mẫu, nạp bản vẽ hoặc thay đổi cấu hình trạm (chỉ dành cho Admin &amp; QC).
+        </div>
         <section class="card workspace">
           <h2>Quản lý biểu mẫu của vị trí</h2>
           <p>Tải mẫu RFI hoặc RP riêng cho hồ sơ đang chọn. Mẫu cùng loại cũ sẽ được sao lưu trước khi thay thế.</p>
@@ -1217,6 +1231,9 @@
 
       <!-- ================= PANE 4: XUẤT BÁO CÁO ================= -->
       <div id="pane-export" class="tab-pane">
+        <div id="export-permission-warning" class="login-error-msg" style="display:none; margin-bottom: 16px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;">
+          ⛔ <strong>Giới hạn phân quyền:</strong> Tài khoản vai trò 'Khách' chỉ có quyền xem dữ liệu và tiến độ, không có quyền xuất hoặc tải báo cáo.
+        </div>
         <section class="card workspace" style="margin-top: 0;">
           <h2>3. Chọn biểu mẫu cần xuất</h2>
           <div class="mode-tabs" role="group" aria-label="Loại biểu mẫu">
@@ -1380,7 +1397,11 @@
       $("selection-count").textContent = checked.length
         ? (isPdf ? `Đã chọn ${checked.length} bộ hồ sơ (PDF)` : (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`))
         : (isPdf ? "Chưa chọn bộ hồ sơ nào" : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào"));
-      $("export").disabled = checked.length === 0 || state.busy;
+      const isGuestUser = currentUser && currentUser.role === "guest";
+      $("export").disabled = checked.length === 0 || state.busy || isGuestUser;
+      if (isGuestUser) {
+        $("export").title = "Tài khoản quyền 'Khách' không có quyền xuất hoặc tải báo cáo.";
+      }
 
       if (!state.busy) {
         if (isPdf) {
@@ -1945,6 +1966,10 @@
     });
 
     $("export").addEventListener("click", async () => {
+      if (currentUser && currentUser.role === "guest") {
+        alert("Tài khoản quyền 'Khách' chỉ có quyền xem dữ liệu và tiến độ, không có quyền xuất hoặc tải báo cáo.");
+        return;
+      }
       const ids = [...document.querySelectorAll(".record-check:checked")].map((input) => input.value);
       if (!ids.length) return;
       state.busy = true;
@@ -2012,18 +2037,108 @@
       $("user-bar").style.display = "flex";
     }
 
-    function renderUserBar(user) {
+    function applyRolePermissions(user) {
       if (!user) return;
-      const roleText = user.role === "admin" ? "Quản trị viên (Toàn quyền)" : `Vị trí: ${user.sites.join(", ")}`;
-      $("current-user-display").textContent = `${user.name} [${roleText}]`;
+      const role = (user.role || "guest").toLowerCase();
+      const isAdmin = role === "admin";
+      const isQC = role === "qc";
+      const isConstruction = role === "construction";
+      const isGuest = role === "guest";
+
+      // 1. Admin button & New Location box
+      const btnAdmin = $("btn-admin-panel");
+      if (btnAdmin) btnAdmin.style.display = isAdmin ? "inline-flex" : "none";
       const createBox = $("create-location-box");
-      if (createBox) {
-        if (user.role === "admin") {
-          createBox.style.display = "flex";
+      if (createBox) createBox.style.display = isAdmin ? "flex" : "none";
+
+      // 2. Data tab upload permissions (Only Admin and QC)
+      const canUploadData = isAdmin || isQC;
+      const dataWarning = $("data-permission-warning");
+      if (dataWarning) {
+        if (!canUploadData) {
+          dataWarning.style.display = "block";
+          const lbl = $("data-role-label");
+          if (lbl) lbl.textContent = isConstruction ? "Thi công" : "Khách";
         } else {
-          createBox.style.display = "none";
+          dataWarning.style.display = "none";
         }
       }
+      const uploadControlog = $("upload-controlog");
+      const uploadRfiData = $("upload-rfi_data");
+      if (uploadControlog) uploadControlog.disabled = !canUploadData;
+      if (uploadRfiData) uploadRfiData.disabled = !canUploadData;
+      document.querySelectorAll('#pane-data .upload-label').forEach(lbl => {
+        if (!canUploadData) {
+          lbl.style.opacity = "0.4";
+          lbl.style.pointerEvents = "none";
+          lbl.style.cursor = "not-allowed";
+        } else {
+          lbl.style.opacity = "1";
+          lbl.style.pointerEvents = "auto";
+          lbl.style.cursor = "pointer";
+        }
+      });
+
+      // 3. Templates tab upload permissions (Only Admin and QC)
+      const canUploadTemplates = isAdmin || isQC;
+      const tplWarning = $("template-permission-warning");
+      if (tplWarning) {
+        if (!canUploadTemplates) {
+          tplWarning.style.display = "block";
+          const lbl = $("template-role-label");
+          if (lbl) lbl.textContent = isConstruction ? "Thi công" : "Khách";
+        } else {
+          tplWarning.style.display = "none";
+        }
+      }
+      const uploadTemplate = $("upload-template");
+      const uploadDrawing = $("upload-drawing-file");
+      const btnFixStation = $("btn-fix-station");
+      const btnSaveDrawings = $("btn-save-drawings");
+      if (uploadTemplate) uploadTemplate.disabled = !canUploadTemplates;
+      if (uploadDrawing) uploadDrawing.disabled = !canUploadTemplates;
+      if (btnFixStation) btnFixStation.disabled = !canUploadTemplates;
+      if (btnSaveDrawings) btnSaveDrawings.disabled = !canUploadTemplates;
+      document.querySelectorAll('#pane-templates .upload-label').forEach(lbl => {
+        if (!canUploadTemplates) {
+          lbl.style.opacity = "0.4";
+          lbl.style.pointerEvents = "none";
+          lbl.style.cursor = "not-allowed";
+        } else {
+          lbl.style.opacity = "1";
+          lbl.style.pointerEvents = "auto";
+          lbl.style.cursor = "pointer";
+        }
+      });
+
+      // 4. Export permissions (Admin, QC, Construction can export; Guest CANNOT)
+      const canExport = isAdmin || isQC || isConstruction;
+      const exportWarning = $("export-permission-warning");
+      if (exportWarning) {
+        exportWarning.style.display = (!canExport) ? "block" : "none";
+      }
+      const btnExport = $("export");
+      if (btnExport) {
+        if (!canExport) {
+          btnExport.disabled = true;
+          btnExport.title = "Tài khoản quyền 'Khách' không có quyền xuất hoặc tải báo cáo.";
+        }
+      }
+    }
+
+    function renderUserBar(user) {
+      if (!user) return;
+      const roleMap = {
+        admin: "Admin",
+        qc: "QC",
+        construction: "Thi công",
+        guest: "Khách"
+      };
+      const rKey = (user.role || "guest").toLowerCase();
+      const rName = roleMap[rKey] || user.role;
+      const sName = (user.sites && user.sites.includes("*")) ? "Tất cả các trạm" : ((user.sites || []).join(", ") || "Chưa cấp");
+      $("current-user-display").textContent = `${user.name} [${rName} · ${sName}]`;
+      applyRolePermissions(user);
     }
 
     async function performLogin() {
@@ -2172,6 +2287,7 @@
       const name = $("reg-name").value.trim();
       const email = $("reg-email").value.trim().toLowerCase();
       const password = $("reg-password").value;
+      const role = $("reg-role") ? $("reg-role").value : "qc";
       const checkedBoxes = document.querySelectorAll('input[name="reg_site"]:checked');
       const requested_sites = Array.from(checkedBoxes).map(cb => cb.value);
 
@@ -2183,7 +2299,7 @@
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password, requested_sites })
+          body: JSON.stringify({ name, email, password, role, requested_sites })
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
@@ -2246,13 +2362,21 @@
           pendingContainer.innerHTML = '<p style="color: var(--muted); font-style: italic;">Hiện không có tài khoản nào đang chờ duyệt.</p>';
         } else {
           let html = `<table class="user-table"><thead><tr>
-            <th>Họ và tên</th><th>Gmail</th><th>Thời gian</th><th>Phân quyền trạm</th><th>Hành động</th>
+            <th>Họ và tên</th><th>Gmail</th><th>Thời gian</th><th style="min-width: 110px;">Phân quyền</th><th>Phân quyền trạm TTC</th><th>Hành động</th>
           </tr></thead><tbody>`;
           for (const u of pendingUsers) {
             html += `<tr data-user-id="${u.id}">
               <td><strong>${escapeHtml(u.name)}</strong></td>
               <td>${escapeHtml(u.email)}</td>
               <td><small>${u.created_at || ""}</small></td>
+              <td>
+                <select class="user-role-select" style="min-height: 32px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font-size: 13px; font-weight: 600;">
+                  <option value="qc" ${u.role === 'qc' ? 'selected' : ''}>QC</option>
+                  <option value="construction" ${u.role === 'construction' ? 'selected' : ''}>Thi công</option>
+                  <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>Khách</option>
+                  <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+              </td>
               <td>
                 <div class="site-checkboxes">
                   <label><input type="checkbox" class="cb-site-all" ${u.sites.includes("*") ? "checked" : ""}> <strong>Tất cả (*)</strong></label>
@@ -2273,24 +2397,33 @@
 
         const approvedContainer = $("approved-users-container");
         let aHtml = `<table class="user-table"><thead><tr>
-          <th>Họ và tên</th><th>Gmail / Tài khoản</th><th>Vai trò</th><th>Quyền vị trí</th><th>Hành động</th>
+          <th>Họ và tên</th><th>Gmail / Tài khoản</th><th style="min-width: 110px;">Phân quyền vai trò</th><th>Quyền vị trí TTC</th><th>Hành động</th>
         </tr></thead><tbody>`;
         for (const u of approvedUsers) {
-          const isAdmin = u.role === "admin";
+          const isMainAdmin = u.id === "letruong28491@gmail.com";
           aHtml += `<tr data-user-id="${u.id}">
             <td><strong>${escapeHtml(u.name)}</strong></td>
             <td>${escapeHtml(u.email)}</td>
-            <td><span class="status-badge ${isAdmin ? "status-approved" : ""}">${u.role}</span></td>
             <td>
-              ${isAdmin ? "<strong>Toàn quyền tất cả các trạm</strong>" : `
+              ${isMainAdmin ? '<span class="status-badge status-approved" style="background: #2563eb; color: white;">ADMIN</span>' : `
+                <select class="user-role-select" style="min-height: 32px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font-size: 13px; font-weight: 600;">
+                  <option value="qc" ${u.role === 'qc' ? 'selected' : ''}>QC</option>
+                  <option value="construction" ${u.role === 'construction' ? 'selected' : ''}>Thi công</option>
+                  <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>Khách</option>
+                  <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+              `}
+            </td>
+            <td>
+              ${isMainAdmin ? '<strong>Toàn quyền tất cả các trạm (*)</strong>' : `
                 <div class="site-checkboxes">
-                  <label><input type="checkbox" class="cb-site-all" ${u.sites.includes("*") ? "checked" : ""}> Tất cả</label>
+                  <label><input type="checkbox" class="cb-site-all" ${u.sites.includes("*") ? "checked" : ""}> <strong>Tất cả (*)</strong></label>
                   ${sites.map(s => `<label><input type="checkbox" class="cb-site" value="${s}" ${u.sites.includes(s) || u.sites.includes("*") ? "checked" : ""}> ${s}</label>`).join("")}
                 </div>
               `}
             </td>
             <td>
-              ${isAdmin ? '<span style="color: var(--muted);">Mặc định</span>' : `
+              ${isMainAdmin ? '<span style="color: var(--muted); font-style: italic;">Quản trị viên mặc định</span>' : `
                 <div style="display: flex; gap: 6px;">
                   <button type="button" class="btn-action-approve" style="background: #2563eb;" onclick="saveUserSites('${u.id}', this)">Lưu quyền</button>
                   <button type="button" class="btn-action-reject" onclick="deleteUser('${u.id}', this)">Xóa</button>
@@ -2311,10 +2444,44 @@
       return (str || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
     }
 
+    // Handle site checkbox change interactions
+    document.addEventListener("change", (e) => {
+      if (e.target && e.target.classList.contains("cb-site-all")) {
+        const row = e.target.closest("tr");
+        if (row) {
+          row.querySelectorAll(".cb-site").forEach(cb => { cb.checked = e.target.checked; });
+        }
+      } else if (e.target && e.target.classList.contains("cb-site")) {
+        const row = e.target.closest("tr");
+        if (row) {
+          const allCb = row.querySelector(".cb-site-all");
+          const cbs = Array.from(row.querySelectorAll(".cb-site"));
+          if (allCb && !e.target.checked) allCb.checked = false;
+          if (allCb && cbs.every(c => c.checked)) allCb.checked = true;
+        }
+      } else if (e.target && e.target.classList.contains("user-role-select")) {
+        if (e.target.value === "admin") {
+          const row = e.target.closest("tr");
+          if (row) {
+            const allCb = row.querySelector(".cb-site-all");
+            if (allCb) {
+              allCb.checked = true;
+              row.querySelectorAll(".cb-site").forEach(cb => { cb.checked = true; });
+            }
+          }
+        }
+      }
+    });
+
     window.approveUser = async function(id, btn) {
       const row = btn.closest("tr");
+      const roleSelect = row.querySelector(".user-role-select");
+      const selectedRole = roleSelect ? roleSelect.value : "qc";
       const isAll = row.querySelector(".cb-site-all").checked;
       let selectedSites = isAll ? ["*"] : Array.from(row.querySelectorAll(".cb-site:checked")).map(cb => cb.value);
+      if (selectedRole === "admin" && isAll) {
+        selectedSites = ["*"];
+      }
       if (selectedSites.length === 0) {
         alert("Vui lòng chọn ít nhất 1 trạm thi công để cấp quyền cho tài khoản này.");
         return;
@@ -2325,7 +2492,7 @@
         const res = await fetch("/api/admin/update-user", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, status: "approved", sites: selectedSites })
+          body: JSON.stringify({ id, status: "approved", role: selectedRole, sites: selectedSites })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Lỗi khi phê duyệt.");
@@ -2340,8 +2507,13 @@
 
     window.saveUserSites = async function(id, btn) {
       const row = btn.closest("tr");
-      const isAll = row.querySelector(".cb-site-all").checked;
+      const roleSelect = row.querySelector(".user-role-select");
+      const selectedRole = roleSelect ? roleSelect.value : undefined;
+      const isAll = row.querySelector(".cb-site-all") ? row.querySelector(".cb-site-all").checked : false;
       let selectedSites = isAll ? ["*"] : Array.from(row.querySelectorAll(".cb-site:checked")).map(cb => cb.value);
+      if (selectedRole === "admin" && isAll) {
+        selectedSites = ["*"];
+      }
       if (selectedSites.length === 0) {
         alert("Vui lòng chọn ít nhất 1 trạm thi công.");
         return;
@@ -2352,11 +2524,12 @@
         const res = await fetch("/api/admin/update-user", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, sites: selectedSites })
+          body: JSON.stringify({ id, role: selectedRole, sites: selectedSites })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Lỗi khi lưu.");
         showAdminMsg(data.message);
+        loadAdminUsers();
       } catch (err) {
         alert("Lỗi: " + err.message);
       } finally {
