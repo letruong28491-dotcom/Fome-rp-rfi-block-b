@@ -306,6 +306,41 @@
   </style>
 </head>
 <body>
+<div id="login-modal">
+    <div class="login-card">
+      <div class="login-header">
+        <span class="login-project-badge">Dự Án Đường Ống Dẫn Khí Lô B - Ô Môn</span>
+        <h2>ĐĂNG NHẬP HỆ THỐNG</h2>
+        <p>Hệ thống Quản lý &amp; Xuất Biểu Mẫu RFI / RP</p>
+      </div>
+      <div id="login-error" class="login-error-msg"></div>
+      <form id="login-form" action="javascript:void(0);" method="POST" onsubmit="event.preventDefault();">
+        <div class="login-field">
+          <label for="login-username">Tên đăng nhập</label>
+          <input id="login-username" type="text" placeholder="Ví dụ: ttc11, ttc15, ttc15a, admin" required autofocus autocomplete="username">
+        </div>
+        <div class="login-field">
+          <label for="login-password">Mật khẩu</label>
+          <input id="login-password" type="password" placeholder="Nhập mật khẩu" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-login" id="btn-submit-login">ĐĂNG NHẬP</button>
+      </form>
+      <div class="login-hint-table">
+        <strong>📌 Danh sách tài khoản phân quyền:</strong>
+        <table>
+          <thead>
+            <tr><th>Tài khoản</th><th>Mật khẩu</th><th>Quyền vị trí</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>admin</code></td><td><code>Admin@2026</code></td><td>Tất cả các trạm</td></tr>
+            <tr><td><code>ttc11</code></td><td><code>TTC11@2026</code></td><td>Trạm TTC11</td></tr>
+            <tr><td><code>ttc15</code></td><td><code>TTC15@2026</code></td><td>Trạm TTC15</td></tr>
+            <tr><td><code>ttc15a</code></td><td><code>TTC15A@2026</code></td><td>Trạm TTC15A</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
   <header>
     <h1>Fome · Xuất biểu mẫu RFI / RP</h1>
     <p>Cập nhật dữ liệu nguồn riêng lẻ và xuất biểu mẫu theo số yêu cầu.</p>
@@ -903,22 +938,31 @@
       }
     }
 
-    $("login-form").addEventListener("submit", async (e) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      if (window.location.search) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-      const username = $("login-username").value.trim();
-      const password = $("login-password").value;
+    async function performLogin() {
+      const usernameInput = $("login-username");
+      const passwordInput = $("login-password");
       const errorEl = $("login-error");
       const submitBtn = $("btn-submit-login");
-      errorEl.style.display = "none";
-      errorEl.textContent = "";
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Đang kiểm tra…";
+
+      const username = usernameInput ? usernameInput.value.trim().toLowerCase() : "";
+      const password = passwordInput ? passwordInput.value : "";
+
+      if (!username || !password) {
+        if (errorEl) {
+          errorEl.textContent = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.";
+          errorEl.style.display = "block";
+        }
+        return;
+      }
+
+      if (errorEl) {
+        errorEl.style.display = "none";
+        errorEl.textContent = "";
+      }
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Đang kiểm tra…";
+      }
 
       try {
         const res = await fetch("/api/login", {
@@ -928,23 +972,54 @@
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
-          errorEl.textContent = data.error || "Tên đăng nhập hoặc mật khẩu không chính xác.";
-          errorEl.style.display = "block";
+          if (errorEl) {
+            errorEl.textContent = data.error || "Tên đăng nhập hoặc mật khẩu không chính xác.";
+            errorEl.style.display = "block";
+          }
           return;
         }
         currentUser = data.user;
+        try {
+          localStorage.setItem("fome_user", JSON.stringify(currentUser));
+        } catch (e) {}
         renderUserBar(currentUser);
         hideLoginModal();
+        if (window.location.search) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
         await loadSites();
         await loadStatus();
       } catch (err) {
-        errorEl.textContent = "Không thể kết nối đến máy chủ: " + err.message;
-        errorEl.style.display = "block";
+        if (errorEl) {
+          errorEl.textContent = "Không thể kết nối đến máy chủ: " + err.message;
+          errorEl.style.display = "block";
+        }
       } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "ĐĂNG NHẬP";
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "ĐĂNG NHẬP";
+        }
       }
-    });
+    }
+
+    const loginForm = $("login-form");
+    if (loginForm) {
+      loginForm.addEventListener("submit", (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        performLogin();
+      });
+    }
+
+    const submitLoginBtn = $("btn-submit-login");
+    if (submitLoginBtn) {
+      submitLoginBtn.addEventListener("click", (e) => {
+        if (e) e.preventDefault();
+        performLogin();
+      });
+    }
 
     $("btn-logout").addEventListener("click", async () => {
       try {
@@ -975,42 +1050,5 @@
 
     checkAuthAndInit();
   </script>
-
-  <div id="login-modal">
-    <div class="login-card">
-      <div class="login-header">
-        <span class="login-project-badge">Dự Án Đường Ống Dẫn Khí Lô B - Ô Môn</span>
-        <h2>ĐĂNG NHẬP HỆ THỐNG</h2>
-        <p>Hệ thống Quản lý &amp; Xuất Biểu Mẫu RFI / RP</p>
-      </div>
-      <div id="login-error" class="login-error-msg"></div>
-      <form id="login-form" action="javascript:void(0);" method="POST" onsubmit="event.preventDefault();">
-        <div class="login-field">
-          <label for="login-username">Tên đăng nhập</label>
-          <input id="login-username" type="text" placeholder="Ví dụ: ttc11, ttc15, ttc15a, admin" required autofocus autocomplete="username">
-        </div>
-        <div class="login-field">
-          <label for="login-password">Mật khẩu</label>
-          <input id="login-password" type="password" placeholder="Nhập mật khẩu" required autocomplete="current-password">
-        </div>
-        <button type="submit" class="btn-login" id="btn-submit-login">ĐĂNG NHẬP</button>
-      </form>
-      <div class="login-hint-table">
-        <strong>📌 Danh sách tài khoản phân quyền:</strong>
-        <table>
-          <thead>
-            <tr><th>Tài khoản</th><th>Mật khẩu</th><th>Quyền vị trí</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>admin</code></td><td><code>Admin@2026</code></td><td>Tất cả các trạm</td></tr>
-            <tr><td><code>ttc11</code></td><td><code>TTC11@2026</code></td><td>Trạm TTC11</td></tr>
-            <tr><td><code>ttc15</code></td><td><code>TTC15@2026</code></td><td>Trạm TTC15</td></tr>
-            <tr><td><code>ttc15a</code></td><td><code>TTC15A@2026</code></td><td>Trạm TTC15A</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
 </body>
 </html>
