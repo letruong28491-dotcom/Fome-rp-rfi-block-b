@@ -41,6 +41,14 @@ from email.parser import BytesParser
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    import nktc_processor
+    HAS_NKTC = True
+except Exception as _nktc_err:
+    HAS_NKTC = False
+    print(f"[NKTC] Warning: Cannot import nktc_processor: {_nktc_err}")
+
+
 from pathlib import Path
 
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -13178,6 +13186,32 @@ class FomeHandler(BaseHTTPRequestHandler):
                 self.send_json(500, {"error": f"Lỗi đọc file bản vẽ: {exc}"})
             return
 
+        if parsed.path == "/api/nktc-days":
+            user = self.get_current_user()
+            if not user:
+                self.send_json(401, {"error": "Vui lòng đăng nhập.", "authenticated": False})
+                return
+            try:
+                query = parse_qs(parsed.query)
+                req_loc = query.get("location", [""])[0] or get_active_site()
+                if not check_site_permission(user, req_loc):
+                    self.send_json(403, {"error": f"Tài khoản không có quyền truy cập vị trí {req_loc}."})
+                    return
+                if not HAS_NKTC:
+                    self.send_json(500, {"error": "Mô-đun Nhật ký thi công chưa được nạp."})
+                    return
+                tpl_info = nktc_processor.get_site_nktc_template_info(req_loc)
+                _, days_list, sorted_months = nktc_processor.get_all_site_days(req_loc)
+                self.send_json(200, {
+                    "location": req_loc,
+                    "template_info": tpl_info,
+                    "days": days_list,
+                    "months": [{"value": m[0], "label": f"Tháng {m[1]}"} for m in sorted_months]
+                })
+            except Exception as exc:
+                self.send_json(500, {"error": f"Lỗi nạp danh sách ngày thi công: {exc}"})
+            return
+
         if parsed.path == "/api/progress":
             user = self.get_current_user()
             if not user:
@@ -13350,6 +13384,7 @@ class FomeHandler(BaseHTTPRequestHandler):
                         "templates": available_templates(location),
 
                         "drawing_info": get_site_drawing_info(location),
+                        "nktc_template_info": nktc_processor.get_site_nktc_template_info(location) if HAS_NKTC else None,
 
                         "warning": warning,
 
@@ -13424,6 +13459,14 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             return
 
+        if self.path == "/api/upload-nktc-template":
+            self.handle_upload_nktc_template()
+            return
+
+        if self.path == "/api/export-nktc":
+            self.handle_export_nktc()
+            return
+
         if self.path == "/api/upload-drawing":
 
             self.handle_upload_drawing()
@@ -13449,6 +13492,78 @@ class FomeHandler(BaseHTTPRequestHandler):
             return
 
         self.send_error(404)
+
+    def handle_upload_nktc_template(self) -> None:
+        user = self.get_current_user()
+        ok, err = check_role_permission(user, ("admin", "qc"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
+        try:
+            fields, uploads = read_multipart(self)
+            location = validate_site_code(fields.get("location", DEFAULT_SITE), True)
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền nạp biểu mẫu cho trạm {location}."})
+                return
+            if not uploads:
+                raise UserError("Vui lòng chọn file mẫu Word (.docx) để tải lên.")
+            filename, content = uploads[0]
+            info = nktc_processor.save_site_nktc_template(location, filename, content)
+            self.send_json(200, {
+                "message": f"Đã nạp file mẫu Nhật ký thi công {info['filename']} cho trạm {location} thành công!",
+                "template_info": info
+            })
+        except UserError as exc:
+            self.send_json(400, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Không thể lưu file mẫu: {exc}"})
+
+    def handle_export_nktc(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"error": "Vui lòng đăng nhập để xuất báo cáo."})
+            return
+        u_role = str(user.get("role", "guest")).lower()
+        if u_role == "guest":
+            self.send_json(403, {"error": "Tài khoản quyền 'Khách' chỉ có quyền xem dữ liệu và tiến độ, không có quyền xuất hoặc tải báo cáo."})
+            return
+        ok, err = check_role_permission(user, ("admin", "qc", "construction"))
+        if not ok:
+            self.send_json(403, {"error": err})
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length < 1 or content_length > 2 * 1024 * 1024:
+                raise UserError("Dữ liệu yêu cầu không hợp lệ.")
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            location = validate_site_code(payload.get("location", DEFAULT_SITE), True)
+            if not check_site_permission(user, location):
+                self.send_json(403, {"error": f"Tài khoản không có quyền xuất báo cáo cho trạm {location}."})
+                return
+            selected_dates = payload.get("dates", [])
+            if not isinstance(selected_dates, list):
+                selected_dates = []
+            path, download_name = nktc_processor.export_nktc_document(location, selected_dates)
+            content_type = (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                if path.suffix.lower() == ".docx"
+                else "application/zip"
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{download_name}"; filename*=UTF-8\'\'{quote(download_name)}',
+            )
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with path.open("rb") as stream:
+                shutil.copyfileobj(stream, self.wfile)
+        except UserError as exc:
+            self.send_json(400, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Lỗi tạo Nhật ký thi công: {exc}"})
 
     def handle_upload_drawing(self) -> None:
         user = self.get_current_user()

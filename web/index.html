@@ -1165,6 +1165,26 @@
           <div style="margin-top: 10px;"><strong>Mẫu RFI:</strong><div class="template-list" id="templates-rfi">Chưa tải trạng thái</div></div>
           <div><strong>Mẫu RP:</strong><div class="template-list" id="templates-rp">Chưa tải trạng thái</div></div>
 
+          <!-- QUẢN LÝ FILE MẪU NHẬT KÝ THI CÔNG (WORD .DOCX) CỦA TRẠM -->
+          <div style="margin-top: 18px; padding: 16px; background: #eff6ff; border-radius: 10px; border: 1px solid #bfdbfe;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+              <div>
+                <div style="font-weight: 700; color: #1e40af; font-size: 15px; margin-bottom: 4px;">
+                  📝 File Mẫu Nhật ký thi công (Word .docx) của trạm: <span id="nktc-site-name" class="tag" style="background: #dbeafe; color: #1d4ed8; font-size: 13.5px; padding: 3px 8px;">TTC11</span>
+                </div>
+                <div id="nktc-status-desc" style="font-size: 13px; color: #374151;">
+                  Đang kiểm tra file mẫu…
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <label class="upload-label" for="upload-nktc-file" style="background: #2563eb; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  <span>📤 Nạp file Mẫu Word (.docx)</span>
+                </label>
+                <input id="upload-nktc-file" type="file" accept=".docx" style="display: none;">
+              </div>
+            </div>
+          </div>
+
           <!-- QUẢN LÝ FILE BẢN VẼ CAD (WELD MAP PDF) CỦA TRẠM -->
           <div style="margin-top: 18px; padding: 16px; background: #f0fdf4; border-radius: 10px; border: 1px solid #bbf7d0;">
             <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
@@ -1240,10 +1260,17 @@
             <button id="mode-rfi" class="active" type="button" aria-pressed="true">RFI (Excel)</button>
             <button id="mode-rp" type="button" aria-pressed="false">RP (Excel)</button>
             <button id="mode-pdf" type="button" aria-pressed="false" style="font-weight: 700;">📑 Gộp PDF (RFI + RP + Bản vẽ)</button>
+            <button id="mode-nktc" type="button" aria-pressed="false" style="font-weight: 700;">📝 Nhật ký thi công (Word)</button>
           </div>
           <p id="mode-description">Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI).</p>
           <div class="toolbar">
             <input id="search" type="search" placeholder="Tìm số RFI, loại, nội dung hoặc số report…">
+            <label id="month-filter-group" style="display: none; gap: 5px; align-items: center; font-size: 13px; font-weight: 600; color: #1e40af;">
+              Tháng:
+              <select id="filter-month" style="border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; font-weight: 600;">
+                <option value="all">Tất cả các tháng</option>
+              </select>
+            </label>
             <label style="display: flex; gap: 5px; align-items: center; font-size: 13px; font-weight: 600; color: var(--teal-dark);">
               Từ ngày:
               <input id="filter-start-date" type="date" style="border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px;">
@@ -1394,9 +1421,16 @@
       const checked = [...document.querySelectorAll(".record-check:checked")];
       const isRp = state.mode === "rp";
       const isPdf = state.mode === "pdf";
-      $("selection-count").textContent = checked.length
-        ? (isPdf ? `Đã chọn ${checked.length} bộ hồ sơ (PDF)` : (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`))
-        : (isPdf ? "Chưa chọn bộ hồ sơ nào" : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào"));
+      const isNktc = state.mode === "nktc";
+      if (isNktc) {
+        $("selection-count").textContent = checked.length
+          ? `Đã chọn ${checked.length} ngày thi công (Word .docx)`
+          : "Chưa chọn ngày thi công nào";
+      } else {
+        $("selection-count").textContent = checked.length
+          ? (isPdf ? `Đã chọn ${checked.length} bộ hồ sơ (PDF)` : (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`))
+          : (isPdf ? "Chưa chọn bộ hồ sơ nào" : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào"));
+      }
       const isGuestUser = currentUser && currentUser.role === "guest";
       $("export").disabled = checked.length === 0 || state.busy || isGuestUser;
       if (isGuestUser) {
@@ -1404,7 +1438,11 @@
       }
 
       if (!state.busy) {
-        if (isPdf) {
+        if (isNktc) {
+          $("export").textContent = checked.length
+            ? `🚀 Xuất File Word Nhật ký (${checked.length} ngày)`
+            : "Xuất File Word Nhật ký thi công";
+        } else if (isPdf) {
           $("export").textContent = checked.length
             ? `🚀 Xuất File PDF Tổng (${checked.length} bộ hồ sơ)`
             : "Xuất File PDF Tổng (Gộp RFI - RP - Bản vẽ)";
@@ -1449,7 +1487,91 @@
       return isNaN(fallback) ? null : fallback;
     }
 
+    let nktcDaysData = [];
+
+    async function loadNktcDays() {
+      const host = $("records");
+      host.innerHTML = '<div class="empty">Đang đọc danh sách ngày thi công…</div>';
+      try {
+        const res = await fetch(`/api/nktc-days?location=${encodeURIComponent(state.location)}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Không thể tải ngày thi công.");
+        nktcDaysData = data.days || [];
+        
+        // Populate month select
+        const monthSelect = $("filter-month");
+        if (monthSelect) {
+          monthSelect.innerHTML = '<option value="all">Tất cả các tháng</option>' +
+            (data.months || []).map(m => `<option value="${m.value}">${m.label}</option>`).join("");
+        }
+        renderNktcDays();
+      } catch (err) {
+        host.innerHTML = `<div class="empty" style="color: var(--red);">Lỗi: ${err.message}</div>`;
+      }
+    }
+
+    function renderNktcDays() {
+      const selectedMonth = $("filter-month") ? $("filter-month").value : "all";
+      const startDate = $("filter-start-date").value ? parseDateString($("filter-start-date").value) : null;
+      const endDate = $("filter-end-date").value ? parseDateString($("filter-end-date").value) : null;
+      
+      const visible = nktcDaysData.filter(item => {
+        if (selectedMonth !== "all" && item.year_month !== selectedMonth) return false;
+        if (startDate !== null || endDate !== null) {
+          const itemDate = parseDateString(item.date);
+          if (itemDate === null) return false;
+          if (startDate !== null && itemDate < startDate) return false;
+          if (endDate !== null && itemDate > endDate) return false;
+        }
+        return true;
+      });
+
+      const host = $("records");
+      host.replaceChildren();
+      if (!visible.length) {
+        host.innerHTML = '<div class="empty">Không tìm thấy ngày thi công nào phù hợp.</div>';
+        updateSelection();
+        return;
+      }
+
+      for (const item of visible) {
+        const row = document.createElement("label");
+        row.className = "record";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "record-check nktc-date-check";
+        checkbox.value = item.date;
+        checkbox.checked = true; // Auto select visible by default for convenience
+        checkbox.addEventListener("change", updateSelection);
+
+        const identifier = document.createElement("span");
+        identifier.className = "record-id";
+        identifier.style.color = "#1e40af";
+        identifier.textContent = item.date;
+
+        const description = document.createElement("span");
+        description.className = "record-description";
+        description.innerHTML = `<strong>${item.items_count} hạng mục thi công &amp; nghiệm thu</strong> &middot; Tháng ${item.month_label}`;
+
+        const metadata = document.createElement("span");
+        metadata.className = "tag";
+        let weatherIcon = item.weather === 'Sunny' ? '☀️ Nắng' : (item.weather === 'Raining' ? '🌧️ Mưa' : '⛅ Bình thường');
+        let workerText = item.worker ? `${item.worker} công nhân` : 'Chưa có Zalo';
+        metadata.textContent = `${weatherIcon} · ${workerText}`;
+        metadata.style.background = item.worker ? '#dbeafe' : '#f1f5f9';
+        metadata.style.color = item.worker ? '#1e40af' : '#475569';
+
+        row.append(checkbox, identifier, description, metadata);
+        host.append(row);
+      }
+      updateSelection();
+    }
+
     function renderRecords() {
+      if (state.mode === "nktc") {
+        renderNktcDays();
+        return;
+      }
       const query = $("search").value.trim().toLocaleLowerCase();
       const startDate = $("filter-start-date").value ? parseDateString($("filter-start-date").value) : null;
       const endDate = $("filter-end-date").value ? parseDateString($("filter-end-date").value) : null;
@@ -1538,6 +1660,19 @@
       state.default_drawing_no = result.drawing_no || "";
       state.default_weld_map_no = result.weld_map_no || "";
       
+      // Update NKTC template card
+      if (result.nktc_template_info) {
+        const n = result.nktc_template_info;
+        if ($("nktc-site-name")) $("nktc-site-name").textContent = state.location;
+        if ($("nktc-status-desc")) {
+          if (n.exists) {
+            $("nktc-status-desc").innerHTML = `<span style="color: #1d4ed8; font-weight: 600;">✔ Đã nạp file mẫu Word:</span> <strong>${n.filename}</strong> (${Math.ceil(n.size / 1024)} KB) &middot; Cập nhật: ${n.modified} &middot; <span style="color: #1e40af;">Sẵn sàng xuất Nhật ký thi công</span>`;
+          } else {
+            $("nktc-status-desc").innerHTML = `<span style="color: #b45309; font-weight: 600;">⚠ Chưa có file mẫu Word riêng cho trạm ${state.location}.</span> Hệ thống sẽ dùng file mẫu mặc định. Bạn có thể nạp mẫu riêng của trạm để giữ thông tin bìa, lý trình và danh sách cán bộ.`;
+          }
+        }
+      }
+
       // Update drawing card
       if (result.drawing_info) {
         const d = result.drawing_info;
@@ -1911,32 +2046,77 @@
     $("search").addEventListener("input", renderRecords);
     $("filter-start-date").addEventListener("change", renderRecords);
     $("filter-end-date").addEventListener("change", renderRecords);
-    for (const mode of ["rfi", "rp", "pdf"]) {
+    for (const mode of ["rfi", "rp", "pdf", "nktc"]) {
       $(`mode-${mode}`).addEventListener("click", () => {
         state.mode = mode;
         const isRp = mode === "rp";
         const isPdf = mode === "pdf";
+        const isNktc = mode === "nktc";
         $("mode-rfi").classList.toggle("active", mode === "rfi");
         $("mode-rp").classList.toggle("active", mode === "rp");
         $("mode-pdf").classList.toggle("active", mode === "pdf");
+        $("mode-nktc").classList.toggle("active", mode === "nktc");
         $("mode-rfi").setAttribute("aria-pressed", String(mode === "rfi"));
         $("mode-rp").setAttribute("aria-pressed", String(mode === "rp"));
         $("mode-pdf").setAttribute("aria-pressed", String(mode === "pdf"));
-        if (isPdf) {
-          $("mode-description").innerHTML = "<strong>Xuất bộ hồ sơ nghiệm thu hoàn chỉnh dạng PDF:</strong> Trang bìa Bảng đối chiếu sự phù hợp ➔ Phiếu RFI ➔ Báo cáo RP ➔ Bản vẽ CAD tô màu vị trí các mối hàn tương ứng (sắp xếp theo trật tự từ nhỏ đến lớn).";
-          $("search").placeholder = "Tìm số RFI, số RP, loại, nội dung cần xuất PDF…";
-        } else if (isRp) {
-          $("mode-description").textContent = "Chọn một hoặc nhiều báo cáo RP để xuất hồ sơ kiểm tra nghiệm thu (Excel). Dữ liệu và công thức số đo mẫu được điền tự động.";
-          $("search").placeholder = "Tìm số báo cáo RP, số RFI, loại, nội dung…";
+        $("mode-nktc").setAttribute("aria-pressed", String(mode === "nktc"));
+
+        const monthFilterGroup = $("month-filter-group");
+        const searchInput = $("search");
+        if (isNktc) {
+          if (monthFilterGroup) monthFilterGroup.style.display = "flex";
+          if (searchInput) searchInput.style.display = "none";
+          $("mode-description").innerHTML = "<strong>Xuất Nhật ký thi công (Word .docx) chuẩn theo từng trạm:</strong> Tự động tổng hợp công tác thi công &amp; nghiệm thu hàng ngày từ file FORM &amp; Controlog, tính lũy kế, cập nhật thời tiết &amp; nhân lực Zalo, chuẩn 2 trang A4/ngày và đánh số trang Footer liên tục.";
+          loadNktcDays();
         } else {
-          $("mode-description").textContent = "Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI - Excel).";
-          $("search").placeholder = "Tìm số RFI, loại, nội dung hoặc số report…";
+          if (monthFilterGroup) monthFilterGroup.style.display = "none";
+          if (searchInput) searchInput.style.display = "block";
+          if (isPdf) {
+            $("mode-description").innerHTML = "<strong>Xuất bộ hồ sơ nghiệm thu hoàn chỉnh dạng PDF:</strong> Trang bìa Bảng đối chiếu sự phù hợp ➔ Phiếu RFI ➔ Báo cáo RP ➔ Bản vẽ CAD tô màu vị trí các mối hàn tương ứng (sắp xếp theo trật tự từ nhỏ đến lớn).";
+            $("search").placeholder = "Tìm số RFI, số RP, loại, nội dung cần xuất PDF…";
+          } else if (isRp) {
+            $("mode-description").textContent = "Chọn một hoặc nhiều báo cáo RP để xuất hồ sơ kiểm tra nghiệm thu (Excel). Dữ liệu và công thức số đo mẫu được điền tự động.";
+            $("search").placeholder = "Tìm số báo cáo RP, số RFI, loại, nội dung…";
+          } else {
+            $("mode-description").textContent = "Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI - Excel).";
+            $("search").placeholder = "Tìm số RFI, loại, nội dung hoặc số report…";
+          }
+          $("select-all").checked = false;
+          renderRecords();
+          updateSelection();
         }
-        $("select-all").checked = false;
-        renderRecords();
-        updateSelection();
       });
     }
+
+    if ($("filter-month")) {
+      $("filter-month").addEventListener("change", () => {
+        if (state.mode === "nktc") {
+          renderNktcDays();
+        }
+      });
+    }
+
+    $("upload-nktc-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const location = $("location").value;
+      state.location = location;
+      const form = new FormData();
+      form.append("location", location);
+      form.append("file", file);
+      showMessage(`Đang tải lên file mẫu Nhật ký thi công ${file.name} cho trạm ${location}…`);
+      try {
+        const response = await fetch("/api/upload-nktc-template", { method: "POST", body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không nạp được file mẫu.");
+        await loadStatus();
+        showMessage(result.message, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
 
     // skip old loop
     if (false) for (const mode of ["rfi", "rp"]) {
@@ -1972,6 +2152,53 @@
       }
       const ids = [...document.querySelectorAll(".record-check:checked")].map((input) => input.value);
       if (!ids.length) return;
+
+      if (state.mode === "nktc") {
+        state.busy = true;
+        $("export").disabled = true;
+        let elapsed = 0;
+        $("export").textContent = `Đang tạo Nhật ký thi công Word (0s)…`;
+        const timer = setInterval(() => {
+          elapsed++;
+          $("export").textContent = `Đang tạo Nhật ký thi công Word (${elapsed}s)…`;
+        }, 1000);
+        showMessage(`Đang xử lý xuất Nhật ký thi công cho ${ids.length} ngày thi công trạm ${state.location}… Vui lòng chờ.`);
+        try {
+          const response = await fetch("/api/export-nktc", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dates: ids, location: state.location })
+          });
+          if (!response.ok) {
+            const result = await response.json();
+            throw new Error(result.error || "Không tạo được Nhật ký thi công.");
+          }
+          const blob = await response.blob();
+          const disposition = response.headers.get("Content-Disposition") || "";
+          const nameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i) || disposition.match(/filename="?([^";]+)"?/i);
+          const filename = nameMatch ? decodeURIComponent(nameMatch[1]) : `NKTC_${state.location}.docx`;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.style.display = "none";
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+            link.remove();
+          }, 1000);
+          showMessage(`Đã xuất thành công Nhật ký thi công (${elapsed}s): ${filename}`, "success");
+        } catch (error) {
+          showMessage(error.message, "error");
+        } finally {
+          clearInterval(timer);
+          state.busy = false;
+          $("export").textContent = "Xuất biểu mẫu đã chọn";
+          updateSelection();
+        }
+        return;
+      }
       state.busy = true;
       $("export").disabled = true;
       const isRp = state.mode === "rp";
@@ -2093,6 +2320,8 @@
       }
       const uploadTemplate = $("upload-template");
       const uploadDrawing = $("upload-drawing-file");
+      const uploadNktc = $("upload-nktc-file");
+      if (uploadNktc) uploadNktc.disabled = !canUploadTemplates;
       const btnFixStation = $("btn-fix-station");
       const btnSaveDrawings = $("btn-save-drawings");
       if (uploadTemplate) uploadTemplate.disabled = !canUploadTemplates;
