@@ -1278,14 +1278,7 @@
           </div>
         </div>
 
-        <!-- BIỂU ĐỒ PHÂN BỔ LOẠI RFI -->
-        <div class="card">
-          <h2>📊 Phân bổ số lượng hồ sơ RFI theo mã công việc (Work Code)</h2>
-          <p>Thống kê số lượng biên bản theo từng mã hạng mục công việc trong trạm:</p>
-          <div class="rfi-breakdown-grid" id="progress-rfi-breakdown">
-            <!-- Will be populated dynamically -->
-          </div>
-        </div>
+
 
         <!-- BẢNG TRA CỨU TIẾN ĐỘ TỪNG MỐI NỐI -->
         <div class="card">
@@ -1592,17 +1585,20 @@
         if (!res.ok) return;
         const data = await res.json();
         
-        $("prog-total-joints").textContent = data.total_joints || 275;
-        $("prog-completed-joints").textContent = data.completed_joints || 9;
-        const active = (data.stages && data.stages[0]) ? Math.max(0, (data.stages[0].count || 28) - (data.completed_joints || 9)) : 19;
-        $("prog-active-joints").textContent = active;
-        $("overview-joints-count").textContent = data.total_joints || 275;
+        $("prog-total-joints").textContent = data.total_joints != null ? data.total_joints : 0;
+        $("prog-completed-joints").textContent = data.completed_joints != null ? data.completed_joints : 0;
+        $("prog-active-joints").textContent = data.active_joints != null ? data.active_joints : 0;
+        $("prog-total-rfis").textContent = data.total_rfis != null ? data.total_rfis : 0;
+        $("overview-joints-count").textContent = data.total_joints != null ? data.total_joints : 0;
+        if ($("overview-joints-sub")) {
+          $("overview-joints-sub").textContent = `Hoàn thành: ${data.completed_joints || 0} · Đang thi công: ${data.active_joints || 0}`;
+        }
 
         // Render Stepper Flow
         const flowHost = $("pipeline-flow-container");
         if (flowHost && data.stages) {
           let flowHtml = "";
-          const totalJ = data.total_joints || 275;
+          const totalJ = (data.total_joints && data.total_joints > 0) ? data.total_joints : 1;
           for (const s of data.stages) {
             const pct = totalJ > 0 ? ((s.count / totalJ) * 100).toFixed(1) : 0;
             flowHtml += `

@@ -12550,81 +12550,149 @@ def get_site_progress(location: str) -> dict[str, object]:
             if cand.is_file():
                 path = cand
                 break
-    
-    stages = [
-        {"name": "Gá lắp (Fit-up)", "count": 28, "icon": "🔧"},
-        {"name": "Hàn (Welding)", "count": 26, "icon": "🔥"},
-        {"name": "Ngoại quan (Visual)", "count": 25, "icon": "🔍"},
-        {"name": "NDT (AUT/RT)", "count": 21, "icon": "📡"},
-        {"name": "Làm sạch (Surface)", "count": 21, "icon": "🧹"},
-        {"name": "Sơn phủ (Painting/Coating)", "count": 21, "icon": "🛡️"},
-        {"name": "Nghiệm thu (RFI/RP)", "count": 16, "icon": "📑"},
-    ]
-    total_joints = 275
-    completed_joints = 9
+
+    stages = []
+    total_joints = 0
+    completed_joints = 0
+    active_joints = 0
     sample_joints = []
-    
+
     if path.is_file():
         try:
-            wb = load_workbook(path, data_only=True, read_only=True)
+            wb = load_workbook(path, data_only=True)
             if "Hoàn thành Joint" in wb.sheetnames:
                 ws = wb["Hoàn thành Joint"]
-                row5 = None
-                for idx, r in enumerate(ws.iter_rows(min_row=5, max_row=6, values_only=True)):
-                    if idx == 0:
-                        row5 = r
-                        break
-                if row5 and len(row5) >= 17:
-                    try:
-                        stages = [
-                            {"name": "Gá lắp (Fit-up)", "count": int(row5[5] or 0), "icon": "🔧"},
-                            {"name": "Hàn (Welding)", "count": int(row5[8] or 0), "icon": "🔥"},
-                            {"name": "Ngoại quan (Visual)", "count": int(row5[10] or 0), "icon": "🔍"},
-                            {"name": "NDT (AUT/RT)", "count": int(row5[12] or 0), "icon": "📡"},
-                            {"name": "Làm sạch (Surface)", "count": int(row5[14] or 0), "icon": "🧹"},
-                            {"name": "Sơn phủ (Painting/Coating)", "count": int(row5[16] or 0), "icon": "🛡️"},
-                            {"name": "Nghiệm thu (RFI/RP)", "count": int(row5[18] if len(row5) > 18 and row5[18] else 16), "icon": "📑"},
-                        ]
-                    except Exception:
-                        pass
+                val_total = ws.cell(row=3, column=7).value
+                val_comp = ws.cell(row=3, column=11).value
+                val_active = ws.cell(row=3, column=15).value
+
+                data_rows = list(ws.iter_rows(min_row=7, max_row=ws.max_row, values_only=True))
+                valid_rows = [r for r in data_rows if len(r) >= 3 and r[2] is not None and str(r[2]).strip() != ""]
+                total_joints = len(valid_rows)
+
+                def count_step(date_idx, rep_idx):
+                    cnt = 0
+                    for r in valid_rows:
+                        has_d = date_idx < len(r) and r[date_idx] is not None and str(r[date_idx]).strip() not in ("", "None", "0", "Chưa thực hiện")
+                        has_r = rep_idx < len(r) and r[rep_idx] is not None and str(r[rep_idx]).strip() not in ("", "None", "0", "Chưa thực hiện")
+                        if has_d or has_r:
+                            cnt += 1
+                    return cnt
+
+                cnt_fitup = count_step(4, 5)
+                cnt_weld = count_step(6, 7)
+                cnt_visual = count_step(8, 9)
+                cnt_ndt = count_step(10, 11)
+                cnt_surface = count_step(12, 13)
+                cnt_coating = count_step(14, 15)
                 
-                for r in ws.iter_rows(min_row=7, max_row=36, values_only=True):
-                    if len(r) >= 4 and r[2]:
-                        j_no = r[1]
-                        j_code = str(r[2])
-                        kp = r[3]
-                        kp_str = f"{float(kp):.1f}" if isinstance(kp, (int, float)) else str(kp or "")
-                        sample_joints.append({
-                            "no": j_no,
-                            "code": j_code,
-                            "kp": kp_str,
-                            "fitup": str(r[5] if len(r) > 5 and r[5] is not None else ""),
-                            "weld": str(r[7] if len(r) > 7 and r[7] is not None else ""),
-                            "visual": str(r[9] if len(r) > 9 and r[9] is not None else ""),
-                            "ndt": str(r[11] if len(r) > 11 and r[11] is not None else ""),
-                            "surface": str(r[13] if len(r) > 13 and r[13] is not None else ""),
-                            "coating": str(r[15] if len(r) > 15 and r[15] is not None else "")
-                        })
+                # Check lowering / completion column (Col 23, 24) or fall back to HDPUF (Col 19, 20)
+                cnt_lowering = count_step(22, 23)
+                cnt_complete = cnt_lowering if cnt_lowering > 0 else count_step(18, 19)
+
+                stages = [
+                    {"name": "Gá lắp (Fit-up)", "count": cnt_fitup, "icon": "🔧"},
+                    {"name": "Hàn (Welding)", "count": cnt_weld, "icon": "🔥"},
+                    {"name": "Ngoại quan (Visual)", "count": cnt_visual, "icon": "🔍"},
+                    {"name": "NDT (AUT/RT)", "count": cnt_ndt, "icon": "📡"},
+                    {"name": "Làm sạch (Surface)", "count": cnt_surface, "icon": "🧹"},
+                    {"name": "Sơn phủ (Painting/Coating)", "count": cnt_coating, "icon": "🛡️"},
+                    {"name": "Nghiệm thu (RFI/RP)", "count": cnt_complete, "icon": "📑"},
+                ]
+
+                try:
+                    completed_joints = int(val_comp) if val_comp is not None else cnt_complete
+                except Exception:
+                    completed_joints = cnt_complete
+
+                try:
+                    active_joints = int(val_active) if val_active is not None else max(0, cnt_fitup - completed_joints)
+                except Exception:
+                    active_joints = max(0, cnt_fitup - completed_joints)
+
+                for r in valid_rows:
+                    j_no = r[1]
+                    j_code = str(r[2])
+                    kp = r[3]
+                    kp_str = f"{float(kp):.1f}" if isinstance(kp, (int, float)) else str(kp or "")
+
+                    fitup_str = str(r[5] or (str(r[4])[:10] if r[4] is not None else ""))
+                    weld_str = str(r[7] or (str(r[6])[:10] if r[6] is not None else ""))
+                    visual_str = str(r[9] or (str(r[8])[:10] if r[8] is not None else ""))
+                    ndt_str = str(r[11] or (str(r[10])[:10] if r[10] is not None else ""))
+                    surface_str = str(r[13] or (str(r[12])[:10] if r[12] is not None else ""))
+                    coating_str = str(r[15] or (str(r[14])[:10] if r[14] is not None else ""))
+
+                    sample_joints.append({
+                        "no": j_no,
+                        "code": j_code,
+                        "kp": kp_str,
+                        "fitup": fitup_str if fitup_str not in ("None", "0", "") else "",
+                        "weld": weld_str if weld_str not in ("None", "0", "") else "",
+                        "visual": visual_str if visual_str not in ("None", "0", "") else "",
+                        "ndt": ndt_str if ndt_str not in ("None", "0", "") else "",
+                        "surface": surface_str if surface_str not in ("None", "0", "") else "",
+                        "coating": coating_str if coating_str not in ("None", "0", "") else ""
+                    })
+
+            elif "Check" in wb.sheetnames:
+                ws = wb["Check"]
+                rows = list(ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=True))
+                valid_rows = [r for r in rows if len(r) >= 2 and r[1] is not None and str(r[1]).strip() != ""]
+                total_joints = len(valid_rows)
+
+                def count_c(c_idx):
+                    return sum(1 for r in valid_rows if c_idx < len(r) and r[c_idx] is not None and str(r[c_idx]).strip() not in ("", "None", "0", "False"))
+
+                cnt_fitup = count_c(2)
+                cnt_weld = count_c(3)
+                cnt_visual = count_c(4)
+                cnt_ndt = count_c(5)
+                cnt_surface = count_c(6)
+                cnt_coating = count_c(7)
+                cnt_complete = count_c(11)
+
+                stages = [
+                    {"name": "Gá lắp (Fit-up)", "count": cnt_fitup, "icon": "🔧"},
+                    {"name": "Hàn (Welding)", "count": cnt_weld, "icon": "🔥"},
+                    {"name": "Ngoại quan (Visual)", "count": cnt_visual, "icon": "🔍"},
+                    {"name": "NDT (AUT/RT)", "count": cnt_ndt, "icon": "📡"},
+                    {"name": "Làm sạch (Surface)", "count": cnt_surface, "icon": "🧹"},
+                    {"name": "Sơn phủ (Painting/Coating)", "count": cnt_coating, "icon": "🛡️"},
+                    {"name": "Nghiệm thu (RFI/RP)", "count": cnt_complete, "icon": "📑"},
+                ]
+                completed_joints = sum(1 for r in valid_rows if len(r) >= 13 and (r[12] is True or str(r[12]).lower() == "true"))
+                if completed_joints == 0:
+                    completed_joints = cnt_complete
+                active_joints = max(0, cnt_fitup - completed_joints)
+
+                for r in valid_rows:
+                    sample_joints.append({
+                        "no": r[0],
+                        "code": str(r[1]),
+                        "kp": "",
+                        "fitup": str(r[2])[:10] if r[2] is not None else "",
+                        "weld": str(r[3])[:10] if r[3] is not None else "",
+                        "visual": str(r[4])[:10] if r[4] is not None else "",
+                        "ndt": str(r[5])[:10] if r[5] is not None else "",
+                        "surface": str(r[6])[:10] if r[6] is not None else "",
+                        "coating": str(r[7])[:10] if r[7] is not None else ""
+                    })
         except Exception:
             pass
-            
+
     try:
         recs, _, _ = load_records(location)
-        rfi_types = {}
-        for r in recs:
-            t = r.get("type", "OTHER")
-            rfi_types[t] = rfi_types.get(t, 0) + 1
     except Exception:
         recs = []
-        rfi_types = {}
-        
+
     return {
         "location": location,
         "total_joints": total_joints,
         "completed_joints": completed_joints,
+        "active_joints": active_joints,
         "total_rfis": len(recs),
         "stages": stages,
-        "rfi_breakdown": rfi_types,
         "sample_joints": sample_joints
     }
 
