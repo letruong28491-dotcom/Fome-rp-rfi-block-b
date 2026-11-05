@@ -12438,9 +12438,9 @@ def read_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], lis
 # ==============================================================================
 USERS_FILE = DATA_DIR / "users.json"
 DEFAULT_USERS = {
-    "admin": {
-        "email": "admin@gmail.com",
-        "name": "Quản Trị Viên (Admin)",
+    "letruong28491@gmail.com": {
+        "email": "letruong28491@gmail.com",
+        "name": "Quản Trị Viên (Lê Trường)",
         "password": "Admin@2026",
         "status": "approved",
         "sites": ["*"],
@@ -12702,7 +12702,7 @@ class FomeHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(length).decode("utf-8")
             data = json.loads(body) if body else {}
             target_id = str(data.get("id", "")).strip().lower()
-            if target_id == "admin":
+            if target_id in ("letruong28491@gmail.com", "admin"):
                 self.send_json(400, {"error": "Không thể xóa tài khoản Quản trị viên mặc định."})
                 return
             users = load_users()
