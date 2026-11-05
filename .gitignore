@@ -1,0 +1,28 @@
+# Zip & Portable packages
+*.zip
+*.rar
+*.tar
+*.gz
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+build/
+dist/
+
+# Output & temp files
+Fome_Web_Output/
+*.tmp
+*.tmp.xlsx
+.system_generated/
+*.log
+
+# Backups
+**/Backup/
+Fome_Backup/
+
+# OS files
+Thumbs.db
+.DS_Store

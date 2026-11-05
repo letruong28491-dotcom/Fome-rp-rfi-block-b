@@ -1,0 +1,62 @@
+================================================================================
+          HƯỚNG DẪN CÀI ĐẶT VÀ SỬ DỤNG PHẦN MỀM XUẤT BÁO CÁO RFI & RP
+================================================================================
+
+1. YÊU CẦU MÁY TÍNH
+--------------------------------------------------------------------------------
+- Hệ điều hành: Windows 10, Windows 11 (hoặc Windows 7/8 64-bit).
+- KHÔNG CẦN CÀI ĐẶT PYTHON.
+- KHÔNG PHỤ THUỘC VÀO MICROSOFT OFFICE (dù máy bạn có Office 2010, 2016, 2019,
+  2021, 365 hay không cài đặt bất kỳ bộ Office nào, phần mềm vẫn đọc, tính toán
+  và xuất file Excel hoàn toàn độc lập và chính xác).
+
+2. CÁCH COPY VÀ CÀI ĐẶT TRÊN MÁY TÍNH KHÁC
+--------------------------------------------------------------------------------
+- Bước 1: Copy toàn bộ thư mục "FOME_PORTABLE_CHAY_NGAY" vào USB hoặc ổ cứng.
+- Bước 2: Dán (Paste) thư mục này vào vị trí bất kỳ trên máy tính mới (ví dụ:
+  Desktop hoặc ổ C:\, D:\...).
+- Bước 3: Mở thư mục và nhấp đúp chuột vào file:
+  ==> "1_Chay_Ung_Dung.bat"
+- Bước 4: Màn hình đen khởi động sẽ hiện lên và tự động mở trình duyệt web với địa
+  chỉ:
+  ==> http://127.0.0.1:8765/
+
+* Lưu ý: Giữ nguyên cửa sổ màn hình đen trong suốt quá trình sử dụng. Khi muốn tắt,
+  chỉ cần đóng cửa sổ màn hình đen lại. Nếu vô tình tắt trình duyệt, hãy nhấp đúp
+  vào "2_Mo_Trinh_Duyet.bat" để mở lại.
+
+3. HƯỚNG DẪN CÁC TÍNH NĂNG CHÍNH TRÊN GIAO DIỆN WEB
+--------------------------------------------------------------------------------
+[1] CHỌN VỊ TRÍ THI CÔNG (SITE):
+    - Góc trên màn hình có danh sách chọn trạm (TTC15, TTC15A...).
+    - Bạn có thể nhấn nút "Thêm vị trí" để tạo mới một trạm với mã số riêng. Hệ
+      thống sẽ tự động nhân bản và căn chỉnh biểu mẫu theo tên trạm mới.
+
+[2] ĐIỀU CHỈNH SỐ BẢN VẼ TRỰC TIẾP:
+    - Có 2 ô nhập tay trên giao diện để cập nhật số bản vẽ (Drawing No.) và số bản
+      vẽ mối hàn (Weld Map No.) cho từng trạm thi công.
+    - Dữ liệu này sẽ tự động thay thế chính xác vào từng biểu mẫu khi xuất file.
+
+[3] NHẬP DỮ LIỆU CONTROLOG VÀ BIỂU MẪU:
+    - Nhấn "Tải lên Controlog" để nạp file theo dõi mối hàn mới nhất.
+    - Hệ thống sẽ tự động đối chiếu số mối hàn (Joint No.), số SHT (cột G, D),
+      và số REV. (cột H, E) từ file Controlog để điền vào báo cáo.
+
+[4] XUẤT BÁO CÁO (RFI & RP):
+    - Chọn danh sách các mã RFI cần xuất.
+    - Nhấn "Xuất RFI" hoặc "Xuất RP" (báo cáo kiểm tra).
+    - File tải về sẽ được chuẩn hóa:
+      + Đầy đủ thông số kỹ thuật, vật tư, quy trình hàn, thợ hàn.
+      + Số thứ tự (STT) tự động tăng dần liên tục (+1) từ 1, 2, 3, 4, 5...
+      + Căn giữa đồng bộ cho các ô (mối hàn, loại mối hàn...).
+      + Đường gạch khóa ô trống tự động căn chỉnh vừa vặn với dòng trống cuối cùng.
+
+4. XỬ LÝ SỰ CỐ THƯỜNG GẶP
+--------------------------------------------------------------------------------
+- Báo lỗi "Không kết nối được":
+  Kiểm tra xem cửa sổ "1_Chay_Ung_Dung.bat" có đang mở hay không. Nếu chưa, hãy
+  chạy lại file này.
+- Bị chặn bởi tường lửa Windows Defender (Windows Firewall):
+  Nếu hiện thông báo "Windows protected your PC", hãy nhấn "More info" -> "Run anyway".
+  Nếu hỏi quyền truy cập mạng (Allow access), hãy nhấn "Allow access".
+================================================================================

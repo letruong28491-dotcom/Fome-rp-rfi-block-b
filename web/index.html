@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fome | Xuất biểu mẫu</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172b3a;
+      --muted: #667784;
+      --line: #dce5e9;
+      --paper: #ffffff;
+      --canvas: #f3f7f8;
+      --teal: #087f78;
+      --teal-dark: #06655f;
+      --soft-teal: #e6f5f3;
+      --red: #b33e35;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 15px/1.5 "Segoe UI", Arial, sans-serif;
+    }
+    header {
+      background: #16394a;
+      color: white;
+      padding: 25px max(24px, calc((100vw - 1080px) / 2));
+    }
+    header h1 { margin: 0 0 3px; font-size: 24px; }
+    header p { margin: 0; color: #d3e5e8; }
+    main { width: min(1080px, calc(100% - 32px)); margin: 26px auto 60px; }
+    .notice {
+      margin-bottom: 18px;
+      border: 1px solid #c6e4df;
+      border-radius: 12px;
+      background: var(--soft-teal);
+      padding: 13px 16px;
+    }
+    .notice strong { color: var(--teal-dark); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .location-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 16px; }
+    .location-bar label { display: grid; gap: 5px; font-weight: 600; }
+    select, .location-bar input {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      padding: 8px 10px;
+      font: inherit;
+    }
+    .location-bar input { width: 180px; }
+    .template-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+    .template-chip { padding: 3px 9px; border-radius: 20px; background: #edf2f4; font-size: 12px; }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 4px 16px #1c394a0a;
+      padding: 19px;
+    }
+    .card h2 { margin: 0 0 6px; font-size: 18px; }
+    .card p { margin: 0 0 14px; color: var(--muted); }
+    .file-name { min-height: 42px; overflow-wrap: anywhere; font-size: 13px; }
+    .file-status { color: var(--muted); font-size: 13px; margin: 9px 0 14px; }
+    button, .upload-label {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 15px;
+      background: var(--teal);
+      color: white;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 600;
+    }
+    button:hover, .upload-label:hover { background: var(--teal-dark); }
+    button:disabled { cursor: wait; opacity: .55; }
+    .upload-label { display: inline-block; }
+    input[type=file] { display: none; }
+    .workspace { margin-top: 18px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 14px 0; }
+    .mode-tabs { display: flex; gap: 8px; margin: 14px 0 4px; }
+    .mode-tabs button { background: #e7eef0; color: var(--ink); }
+    .mode-tabs button.active { background: var(--teal); color: white; }
+    .toolbar input[type=search] {
+      flex: 1 1 300px;
+      min-width: 220px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    .select-all { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
+    .record-list {
+      max-height: 380px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .record {
+      display: grid;
+      grid-template-columns: 22px minmax(180px, 1.15fr) minmax(120px, 1fr) 90px;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid #edf1f3;
+    }
+    .record:last-child { border-bottom: 0; }
+    .record:hover { background: #f8fbfb; }
+    .record-id { font-weight: 650; overflow-wrap: anywhere; }
+    .record-description { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .record-date { color: var(--muted); font-size: 13px; text-align: right; }
+    .tag {
+      display: inline-block;
+      color: #06655f;
+      background: var(--soft-teal);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .record.unsupported { opacity: .55; }
+    .empty { padding: 22px; text-align: center; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 13px; margin-top: 15px; }
+    .actions span { color: var(--muted); }
+    #message { min-height: 24px; margin-top: 10px; }
+    #message.error { color: var(--red); }
+    #message.success { color: var(--teal-dark); }
+    .footnote { color: var(--muted); font-size: 13px; margin-top: 15px; }
+    @media (max-width: 700px) {
+      .grid { grid-template-columns: 1fr; }
+      .record { grid-template-columns: 22px minmax(0, 1fr) 72px; }
+      .record-description { display: none; }
+      .record-date { grid-column: 2; text-align: left; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fome · Xuất biểu mẫu RFI / RP</h1>
+    <p>Cập nhật dữ liệu nguồn riêng lẻ và xuất biểu mẫu theo số yêu cầu.</p>
+  </header>
+  <main>
+    <div class="notice">
+      <strong>Chạy riêng trên máy này.</strong>
+      File không được gửi lên Internet. Dữ liệu tra cứu được điền thành giá trị tĩnh; các công thức số đo trong mẫu RP được giữ nguyên.
+    </div>
+    <div id="message" role="status" aria-live="polite"></div>
+
+    <section class="card location-bar" aria-label="Hồ sơ vị trí">
+      <div style="display: flex; flex-wrap: wrap; align-items: end; gap: 12px; width: 100%;">
+        <label for="location" style="min-width: 140px;">Hồ sơ vị trí
+          <select id="location"></select>
+        </label>
+        <div style="flex: 1; min-width: 320px; display: flex; flex-wrap: wrap; align-items: end; gap: 8px; border-left: 2px solid var(--line); padding-left: 12px;">
+          <label for="new-location">Mã vị trí mới
+            <input id="new-location" type="text" placeholder="Ví dụ TTC16" maxlength="31" style="width: 120px;">
+          </label>
+          <label for="new-engineer-no" style="width: 180px;">Kỹ sư phụ trách
+            <input id="new-engineer-no" type="text" placeholder="Nguyễn Đức Sơn" style="width: 100%;">
+          </label>
+          <button id="create-location" type="button" style="white-space: nowrap;">Tạo hồ sơ</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid" aria-label="Dữ liệu đầu vào">
+      <article class="card">
+        <h2>1. Controlog</h2>
+        <p>Có thể cập nhật độc lập, không ảnh hưởng file nguồn còn lại.</p>
+        <div class="file-name" id="name-controlog"></div>
+        <div class="file-status" id="status-controlog">Đang đọc trạng thái…</div>
+        <label class="upload-label" for="upload-controlog">Chọn file mới</label>
+        <input id="upload-controlog" type="file" accept=".xlsx">
+      </article>
+      <article class="card">
+        <h2>2. Danh sách RFI / FORM</h2>
+        <p>Danh sách số RFI và dữ liệu điền vào biểu mẫu được đọc từ sheet FORM.</p>
+        <div class="file-name" id="name-rfi_data"></div>
+        <div class="file-status" id="status-rfi_data">Đang đọc trạng thái…</div>
+        <label class="upload-label" for="upload-rfi_data">Chọn file mới</label>
+        <input id="upload-rfi_data" type="file" accept=".xlsx">
+      </article>
+    </section>
+
+    <section class="card workspace">
+      <h2>Quản lý biểu mẫu của vị trí</h2>
+      <p>Tải mẫu RFI hoặc RP riêng cho hồ sơ đang chọn. Mẫu cùng loại cũ sẽ được sao lưu trước khi thay thế.</p>
+      <div class="toolbar">
+        <label for="template-family">Nhóm mẫu</label>
+        <select id="template-family">
+          <option value="rfi">RFI</option>
+          <option value="rp">RP</option>
+        </select>
+        <label class="upload-label" for="upload-template">Chọn mẫu Excel</label>
+        <input id="upload-template" type="file" accept=".xlsx,.xlsm">
+      </div>
+      <div><strong>Mẫu RFI:</strong><div class="template-list" id="templates-rfi">Chưa tải trạng thái</div></div>
+      <div><strong>Mẫu RP:</strong><div class="template-list" id="templates-rp">Chưa tải trạng thái</div></div>
+      <div style="margin-top: 14px; padding: 14px 16px; background: #eef6f9; border-radius: 10px; border: 1px solid #d0e2ea; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+        <div>
+          <div style="font-weight: 600; color: #172b3a; margin-bottom: 3px;">
+            Tự động nhận diện & sửa ký tự địa điểm trạm trên biểu mẫu RFI
+          </div>
+          <div style="font-size: 13px; color: var(--muted);">
+            Ký tự trạm áp dụng cho vị trí này: <strong id="station-code-display" style="color: var(--teal-dark);">...</strong> (tự động thay thế trong ô Địa điểm / Construction station)
+          </div>
+        </div>
+        <button id="btn-fix-station" type="button" style="background: #087f78; white-space: nowrap;">
+          ⚡ Tự động sửa ký tự trong biểu mẫu
+        </button>
+      </div>
+
+      <div style="margin-top: 14px; padding: 16px; background: #fdfbf7; border-radius: 10px; border: 1px solid #ebdcc5;">
+        <div style="font-weight: 700; color: #5a3c10; margin-bottom: 4px; font-size: 15px;">
+          📐 Cấu hình số bản vẽ &amp; Kỹ sư phụ trách theo từng vị trí
+        </div>
+        <p style="margin: 0 0 12px; font-size: 13px; color: #7a6344;">
+          Hệ thống <strong>tự động lấy Bản vẽ mối hàn số từ các cột C, E, D</strong> và <strong>Bản vẽ số từ các cột F, H, G</strong> trong file <strong>Control Log</strong> theo từng Joint/RFI tương ứng. Kỹ sư phụ trách (Họ và tên) được lưu riêng theo từng vị trí (ví dụ TTC15/TTC15A là Nguyễn Đức Sơn, TTC11 là Lê Đình Trường). Bạn có thể chỉnh sửa và lưu lại bên dưới.
+        </p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px;">
+          <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: #3b2a14;">
+            Kỹ sư phụ trách / Họ và tên (Mục số 6):
+            <input id="site-engineer-name" type="text" style="width: 100%; min-height: 38px; border: 1px solid #d4c4af; border-radius: 6px; padding: 6px 10px; font-size: 13px;" placeholder="Ví dụ: Nguyễn Đức Sơn hoặc Lê Đình Trường">
+          </label>
+          <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: #3b2a14;">
+            Bản vẽ số / Drawing No.:
+            <input id="site-drawing-no" type="text" style="width: 100%; min-height: 38px; border: 1px solid #d4c4af; border-radius: 6px; padding: 6px 10px; font-size: 13px;" placeholder="Ví dụ: SWG-PTSCL18-EPC-70-PL-DAG-0002 SHT 17/94">
+          </label>
+          <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: #3b2a14;">
+            Bản vẽ mối hàn số / Weld map No.:
+            <input id="site-weld-map-no" type="text" style="width: 100%; min-height: 38px; border: 1px solid #d4c4af; border-radius: 6px; padding: 6px 10px; font-size: 13px;" placeholder="Ví dụ: SWG-PTSCL18-CON-70-PL-WMP-0002 SHT 17/94">
+          </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end;">
+          <button id="btn-save-drawings" type="button" style="background: #b45309; padding: 8px 16px; font-size: 13px; font-weight: 600;">
+            💾 Lưu cấu hình vị trí
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card workspace">
+      <h2>3. Chọn biểu mẫu cần xuất</h2>
+      <div class="mode-tabs" role="group" aria-label="Loại biểu mẫu">
+        <button id="mode-rfi" class="active" type="button" aria-pressed="true">RFI</button>
+        <button id="mode-rp" type="button" aria-pressed="false">RP</button>
+      </div>
+      <p id="mode-description">Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI).</p>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Tìm số RFI, loại, nội dung hoặc số report…">
+        <label style="display: flex; gap: 5px; align-items: center; font-size: 13px; font-weight: 600; color: var(--teal-dark);">
+          Từ ngày:
+          <input id="filter-start-date" type="date" style="border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px;">
+        </label>
+        <label style="display: flex; gap: 5px; align-items: center; font-size: 13px; font-weight: 600; color: var(--teal-dark);">
+          Đến ngày:
+          <input id="filter-end-date" type="date" style="border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px;">
+        </label>
+        <label class="select-all"><input id="select-all" type="checkbox"> Chọn các mục đang hiển thị</label>
+      </div>
+      <div class="record-list" id="records"><div class="empty">Đang tải danh sách…</div></div>
+      <div class="actions">
+        <button id="export" type="button" disabled>Xuất biểu mẫu đã chọn</button>
+        <span id="selection-count">Chưa chọn RFI nào</span>
+      </div>
+        <div class="footnote">
+        Tệp xuất được lưu trong thư mục <strong>Fome_Web_Output</strong>. File nguồn được lưu riêng trong <strong>Fome_Web_Data</strong>; các bản nguồn đã thay thế được lưu trong thư mục Backup. Với mẫu RP có công thức số đo, công thức mẫu được giữ nguyên để tiếp tục sử dụng.
+      </div>
+    </section>
+  </main>
+  <script>
+    const state = { records: [], sources: [], busy: false, mode: "rfi", location: "TTC15A" };
+    const $ = (id) => document.getElementById(id);
+
+    function showMessage(text, type = "") {
+      const message = $("message");
+      message.textContent = text;
+      message.className = type;
+    }
+
+    function updateSelection() {
+      const checked = [...document.querySelectorAll(".record-check:checked")];
+      const isRp = state.mode === "rp";
+      $("selection-count").textContent = checked.length
+        ? (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`)
+        : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào");
+      $("export").disabled = checked.length === 0 || state.busy;
+
+      if (!state.busy) {
+        if (isRp) {
+          $("export").textContent = checked.length
+            ? `Xuất ${checked.length} báo cáo RP đã chọn`
+            : "Xuất báo cáo RP đã chọn";
+        } else {
+          $("export").textContent = checked.length
+            ? `Xuất ${checked.length} biểu mẫu RFI đã chọn`
+            : "Xuất biểu mẫu RFI đã chọn";
+        }
+      }
+
+      if (checked.length === 1) {
+        const item = state.records.find((r) => r.id === checked[0].value);
+        if (item) {
+          if (item.drawing_no && $("site-drawing-no")) {
+            $("site-drawing-no").value = item.drawing_no;
+          }
+          if (item.weld_map_no && $("site-weld-map-no")) {
+            $("site-weld-map-no").value = item.weld_map_no;
+          }
+        }
+      } else if (checked.length === 0) {
+        if (state.default_drawing_no && $("site-drawing-no")) {
+          $("site-drawing-no").value = state.default_drawing_no;
+        }
+        if (state.default_weld_map_no && $("site-weld-map-no")) {
+          $("site-weld-map-no").value = state.default_weld_map_no;
+        }
+      }
+    }
+
+    function parseDateString(dateStr) {
+      if (!dateStr) return null;
+      let m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return new Date(m[1], m[2]-1, m[3]).getTime();
+      m = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (m) return new Date(m[3], m[2]-1, m[1]).getTime();
+      const fallback = Date.parse(dateStr);
+      return isNaN(fallback) ? null : fallback;
+    }
+
+    function renderRecords() {
+      const query = $("search").value.trim().toLocaleLowerCase();
+      const startDate = $("filter-start-date").value ? parseDateString($("filter-start-date").value) : null;
+      const endDate = $("filter-end-date").value ? parseDateString($("filter-end-date").value) : null;
+      const isRp = state.mode === "rp";
+      
+      const visible = state.records.filter((item) => {
+        const searchable = `${item.id} ${item.type} ${item.description} ${item.report}`.toLocaleLowerCase();
+        if (!searchable.includes(query)) return false;
+        
+        if (startDate !== null || endDate !== null) {
+          const itemDate = parseDateString(item.date);
+          if (itemDate === null) return false;
+          if (startDate !== null && itemDate < startDate) return false;
+          if (endDate !== null && itemDate > endDate) return false;
+        }
+        
+        return true;
+      });
+      const host = $("records");
+      host.replaceChildren();
+      if (!visible.length) {
+        host.innerHTML = `<div class="empty">Không tìm thấy ${isRp ? "báo cáo RP" : "số RFI"} phù hợp.</div>`;
+        return;
+      }
+      for (const item of visible) {
+        const supported = isRp ? item.rp_supported : item.supported;
+        const row = document.createElement("label");
+        row.className = `record${supported ? "" : " unsupported"}`;
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "record-check";
+        checkbox.value = item.id;
+        checkbox.disabled = !supported;
+        checkbox.addEventListener("change", updateSelection);
+
+        const identifier = document.createElement("span");
+        identifier.className = "record-id";
+        // Khi ở chế độ RP: Hiển thị nổi bật Mã Báo Cáo RP (cột M trong file dữ liệu)
+        identifier.textContent = isRp ? (item.report || item.id) : item.id;
+
+        const description = document.createElement("span");
+        description.className = "record-description";
+        if (isRp) {
+          const subText = item.description || "";
+          description.innerHTML = `<span style="color:#0f766e;font-weight:600;margin-right:6px;">[RFI: ${item.id}]</span><span>${subText}</span>`;
+        } else {
+          const rpInfo = item.report ? ` <span style="color:#64748b;font-size:12px;">(RP: ${item.report})</span>` : "";
+          description.innerHTML = `<span>${item.description || ""}</span>${rpInfo}`;
+        }
+
+        const metadata = document.createElement("span");
+        metadata.className = supported ? "tag" : "record-date";
+        metadata.textContent = supported
+          ? (isRp ? `RP-${item.type}` : item.type)
+          : isRp && item.rp_note
+            ? (item.rp_note.includes("Không cần") ? "Không xuất RP" : "Cần số đo thực")
+            : `Chưa có mẫu ${state.mode.toUpperCase()}`;
+        
+        let tooltip = isRp
+          ? `Báo cáo RP: ${item.report || item.id}\nSố RFI liên kết: ${item.id}\nNội dung: ${item.description || ""}`
+          : `Số RFI: ${item.id}\nNội dung: ${item.description || ""}\nBáo cáo RP: ${item.report || ""}`;
+        if (item.drawing_no || item.weld_map_no) {
+          tooltip += `\n• Bản vẽ số (F, H, G): ${item.drawing_no || ""}\n• Bản vẽ mối hàn (C, E, D): ${item.weld_map_no || ""}`;
+        }
+        if (!supported && isRp && item.rp_note) {
+          tooltip += `\n(${item.rp_note})`;
+        }
+        row.title = tooltip;
+        description.title = tooltip;
+
+        row.append(checkbox, identifier, description, metadata);
+        host.append(row);
+      }
+      updateSelection();
+    }
+
+    async function loadStatus() {
+      state.location = $("location").value || state.location;
+      const response = await fetch(`/api/status?location=${encodeURIComponent(state.location)}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không đọc được dữ liệu nguồn.");
+      state.records = result.records;
+      state.sources = result.sources;
+      state.default_drawing_no = result.drawing_no || "";
+      state.default_weld_map_no = result.weld_map_no || "";
+      for (const source of result.sources) {
+        $(`name-${source.key}`).textContent = source.filename;
+        $(`status-${source.key}`).textContent = source.exists
+          ? `Đang dùng · ${new Date(source.modified).toLocaleString("vi-VN")} · ${Math.ceil(source.size / 1024)} KB`
+          : "Chưa tải file cho vị trí này.";
+      }
+      for (const family of ["rfi", "rp"]) {
+        const host = $(`templates-${family}`);
+        host.replaceChildren();
+        const templates = result.templates[family] || [];
+        if (!templates.length) {
+          host.textContent = "Chưa có mẫu.";
+        } else {
+          for (const template of templates) {
+            const chip = document.createElement("span");
+            chip.className = "template-chip";
+            const timeStr = template.modified ? ` (${new Date(template.modified).toLocaleDateString("vi-VN")})` : "";
+            chip.textContent = `${template.type} · ${template.filename}${timeStr}`;
+            host.append(chip);
+          }
+        }
+      }
+      renderRecords();
+      if ($("station-code-display")) {
+        $("station-code-display").textContent = result.station_code || state.location;
+      }
+      if ($("site-drawing-no")) {
+        $("site-drawing-no").value = result.drawing_no || "";
+      }
+      if ($("site-weld-map-no")) {
+        $("site-weld-map-no").value = result.weld_map_no || "";
+      }
+      if ($("site-engineer-name")) {
+        $("site-engineer-name").value = result.engineer_name || "";
+      }
+      const isRp = state.mode === "rp";
+      const exportable = result.records.filter((item) =>
+        isRp ? item.rp_supported : item.supported
+      ).length;
+      showMessage(result.warning || `Vị trí ${state.location}: đã nạp ${result.count} mục; ${exportable} ${isRp ? "báo cáo RP" : "biểu mẫu RFI"} có mẫu để xuất.`, result.warning ? "error" : "success");
+    }
+
+    async function loadSites(selected = "") {
+      const response = await fetch("/api/sites", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không đọc được danh sách vị trí.");
+      const picker = $("location");
+      picker.replaceChildren();
+      for (const code of result.sites) {
+        const option = document.createElement("option");
+        option.value = code;
+        option.textContent = code;
+        picker.append(option);
+      }
+      const savedLoc = localStorage.getItem("fome_active_location");
+      const targetLoc = selected || result.default || (savedLoc && result.sites.includes(savedLoc) ? savedLoc : result.sites[0]);
+      state.location = targetLoc;
+      picker.value = state.location;
+      localStorage.setItem("fome_active_location", state.location);
+    }
+
+    $("location").addEventListener("change", () => {
+      state.location = $("location").value;
+      localStorage.setItem("fome_active_location", state.location);
+      fetch("/api/active-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: state.location }),
+      }).catch(() => {});
+      $("search").value = "";
+      loadStatus().catch((error) => showMessage(error.message, "error"));
+    });
+
+    $("btn-fix-station").addEventListener("click", async () => {
+      const location = $("location").value || state.location;
+      showMessage(`Đang quét và sửa ký tự địa điểm trạm cho toàn bộ biểu mẫu của ${location}…`);
+      $("btn-fix-station").disabled = true;
+      try {
+        const response = await fetch("/api/fix-station-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không thể sửa ký tự biểu mẫu.");
+        await loadStatus();
+        showMessage(result.message, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        $("btn-fix-station").disabled = false;
+      }
+    });
+
+    $("btn-save-drawings").addEventListener("click", async () => {
+      const location = $("location").value || state.location;
+      const drawing_no = $("site-drawing-no").value.trim();
+      const weld_map_no = $("site-weld-map-no").value.trim();
+      const engineer_name = $("site-engineer-name") ? $("site-engineer-name").value.trim() : "";
+      if (!drawing_no && !weld_map_no && !engineer_name) {
+        showMessage("Hãy nhập thông tin cấu hình.", "error");
+        return;
+      }
+      showMessage(`Đang cập nhật cấu hình vào các biểu mẫu của ${location}…`);
+      $("btn-save-drawings").disabled = true;
+      try {
+        const response = await fetch("/api/site-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location, drawing_no, weld_map_no, engineer_name }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không thể lưu cấu hình.");
+        await loadStatus();
+        showMessage(result.message, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        $("btn-save-drawings").disabled = false;
+      }
+    });
+
+    $("create-location").addEventListener("click", async () => {
+      const location = $("new-location").value.trim();
+      if (!location) {
+        showMessage("Nhập mã vị trí cần tạo.", "error");
+        return;
+      }
+      const engineer_name = $("new-engineer-no") ? $("new-engineer-no").value.trim() : "";
+      const drawing_no = $("new-drawing-no") ? $("new-drawing-no").value.trim() : "";
+      const weld_map_no = $("new-weld-map-no") ? $("new-weld-map-no").value.trim() : "";
+      $("create-location").disabled = true;
+      const oldBtnText = $("create-location").textContent;
+      $("create-location").textContent = "Đang tạo…";
+      showMessage(`Đang tạo hồ sơ ${location} và khởi tạo dữ liệu/biểu mẫu…`);
+      try {
+        const response = await fetch("/api/site", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location, drawing_no, weld_map_no, engineer_name }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không tạo được vị trí.");
+        $("new-location").value = "";
+        if ($("new-engineer-no")) $("new-engineer-no").value = "";
+        if ($("new-drawing-no")) $("new-drawing-no").value = "";
+        if ($("new-weld-map-no")) $("new-weld-map-no").value = "";
+        await loadSites(result.location);
+        await loadStatus();
+        showMessage(result.message + " Đã đồng bộ dữ liệu và mẫu cho vị trí này.", "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        $("create-location").disabled = false;
+        $("create-location").textContent = oldBtnText;
+      }
+    });
+
+    for (const key of ["controlog", "rfi_data"]) {
+      $(`upload-${key}`).addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const location = $("location").value;
+        state.location = location;
+        const form = new FormData();
+        form.append("source", key);
+        form.append("location", location);
+        form.append("file", file);
+        showMessage(`Đang kiểm tra và cập nhật ${file.name} cho ${location}…`);
+        try {
+          const response = await fetch("/api/upload", { method: "POST", body: form });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Không cập nhật được file.");
+          await loadStatus();
+          showMessage(result.message, "success");
+        } catch (error) {
+          showMessage(error.message, "error");
+        } finally {
+          event.target.value = "";
+        }
+      });
+    }
+
+    $("upload-template").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const location = $("location").value;
+      state.location = location;
+      const form = new FormData();
+      form.append("family", $("template-family").value);
+      form.append("location", location);
+      form.append("file", file);
+      showMessage(`Đang kiểm tra mẫu ${file.name}…`);
+      try {
+        const response = await fetch("/api/template", { method: "POST", body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không cập nhật được mẫu.");
+        await loadStatus();
+        showMessage(result.message, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    $("search").addEventListener("input", renderRecords);
+    $("filter-start-date").addEventListener("change", renderRecords);
+    $("filter-end-date").addEventListener("change", renderRecords);
+    for (const mode of ["rfi", "rp"]) {
+      $(`mode-${mode}`).addEventListener("click", () => {
+        state.mode = mode;
+        const isRp = mode === "rp";
+        $("mode-rfi").classList.toggle("active", mode === "rfi");
+        $("mode-rp").classList.toggle("active", mode === "rp");
+        $("mode-rfi").setAttribute("aria-pressed", String(mode === "rfi"));
+        $("mode-rp").setAttribute("aria-pressed", String(mode === "rp"));
+        $("mode-description").textContent = isRp
+          ? "Chọn một hoặc nhiều báo cáo RP để xuất hồ sơ kiểm tra nghiệm thu. Dữ liệu và công thức số đo mẫu được điền tự động."
+          : "Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI).";
+        $("search").placeholder = isRp
+          ? "Tìm số báo cáo RP, số RFI, loại, nội dung…"
+          : "Tìm số RFI, loại, nội dung hoặc số report…";
+        $("select-all").checked = false;
+        renderRecords();
+        loadStatus().catch((error) => showMessage(error.message, "error"));
+      });
+    }
+    $("select-all").addEventListener("change", (event) => {
+      for (const checkbox of document.querySelectorAll(".record-check:not(:disabled)")) {
+        checkbox.checked = event.target.checked;
+      }
+      updateSelection();
+    });
+
+    $("export").addEventListener("click", async () => {
+      const ids = [...document.querySelectorAll(".record-check:checked")].map((input) => input.value);
+      if (!ids.length) return;
+      state.busy = true;
+      $("export").disabled = true;
+      const isRp = state.mode === "rp";
+      let elapsed = 0;
+      const baseLabel = isRp ? "Đang tạo báo cáo RP" : "Đang tạo biểu mẫu RFI";
+      $("export").textContent = `${baseLabel} (0s)…`;
+      const timer = setInterval(() => {
+        elapsed++;
+        $("export").textContent = `${baseLabel} (${elapsed}s)…`;
+      }, 1000);
+      showMessage(`Đang xử lý ${ids.length} ${isRp ? "báo cáo RP" : "biểu mẫu RFI"} (xử lý đa luồng)… Vui lòng giữ cửa sổ trình duyệt.`);
+      try {
+        const response = await fetch("/api/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, mode: state.mode, location: state.location }),
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || "Không tạo được biểu mẫu.");
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const nameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i) || disposition.match(/filename="?([^";]+)"?/i);
+        const filename = nameMatch ? decodeURIComponent(nameMatch[1]) : `Fome_${state.mode.toUpperCase()}.zip`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.style.display = "none";
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          link.remove();
+        }, 1000);
+        showMessage(`Đã xuất thành công ${ids.length} biểu mẫu (${elapsed}s): ${filename}`, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        clearInterval(timer);
+        state.busy = false;
+        $("export").textContent = "Xuất biểu mẫu đã chọn";
+        updateSelection();
+      }
+    });
+
+    loadSites().then(loadStatus).catch((error) => {
+      $("records").innerHTML = '<div class="empty">Không thể đọc danh sách. Kiểm tra file dữ liệu FORM.</div>';
+      showMessage(error.message, "error");
+    });
+  </script>
+</body>
+</html>

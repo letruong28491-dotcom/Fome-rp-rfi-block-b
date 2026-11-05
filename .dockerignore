@@ -1,0 +1,8 @@
+build/
+dist/
+*.spec
+.git/
+FOME_PORTABLE_CHAY_NGAY/
+FOME_PORTABLE_v1.0.zip
+__pycache__/
+*.pyc
