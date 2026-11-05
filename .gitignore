@@ -26,3 +26,5 @@ Fome_Backup/
 # OS files
 Thumbs.db
 .DS_Store
+
+*.exe

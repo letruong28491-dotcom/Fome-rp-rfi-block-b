@@ -1,0 +1,34 @@
+{
+  "admin": {
+    "password": "Admin@2026",
+    "name": "Quản Trị Viên (Admin)",
+    "sites": [
+      "*"
+    ],
+    "role": "admin"
+  },
+  "ttc11": {
+    "password": "TTC11@2026",
+    "name": "Trạm Thi Công TTC11",
+    "sites": [
+      "TTC11"
+    ],
+    "role": "user"
+  },
+  "ttc15": {
+    "password": "TTC15@2026",
+    "name": "Trạm Thi Công TTC15",
+    "sites": [
+      "TTC15"
+    ],
+    "role": "user"
+  },
+  "ttc15a": {
+    "password": "TTC15A@2026",
+    "name": "Trạm Thi Công TTC15A",
+    "sites": [
+      "TTC15A"
+    ],
+    "role": "user"
+  }
+}
