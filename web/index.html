@@ -904,7 +904,13 @@
     }
 
     $("login-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
       const username = $("login-username").value.trim();
       const password = $("login-password").value;
       const errorEl = $("login-error");
@@ -978,7 +984,7 @@
         <p>Hệ thống Quản lý &amp; Xuất Biểu Mẫu RFI / RP</p>
       </div>
       <div id="login-error" class="login-error-msg"></div>
-      <form id="login-form">
+      <form id="login-form" action="javascript:void(0);" method="POST" onsubmit="event.preventDefault();">
         <div class="login-field">
           <label for="login-username">Tên đăng nhập</label>
           <input id="login-username" type="text" placeholder="Ví dụ: ttc11, ttc15, ttc15a, admin" required autofocus autocomplete="username">

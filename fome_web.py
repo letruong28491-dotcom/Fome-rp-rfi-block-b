@@ -12605,39 +12605,30 @@ class FomeHandler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
+        parsed = urlparse(self.path)
 
-        if self.path == "/":
-
+        if parsed.path in ("/", "", "/index.html"):
             try:
-
                 page = (WEB_DIR / "index.html").read_bytes()
-
             except OSError:
-
                 self.send_response(500)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
                 self.wfile.write("Không tìm thấy giao diện web.".encode("utf-8"))
-
                 return
-
             self.send_response(200)
-
             self.send_header("Content-Type", "text/html; charset=utf-8")
-
             self.send_header("Content-Length", str(len(page)))
-
             self.send_header("Cache-Control", "no-store")
-
             self.send_header("Access-Control-Allow-Origin", "*")
-
             self.end_headers()
-
             self.wfile.write(page)
-
             return
 
-        parsed = urlparse(self.path)
+        if parsed.path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
 
         if parsed.path == "/api/me":
             user = self.get_current_user()
