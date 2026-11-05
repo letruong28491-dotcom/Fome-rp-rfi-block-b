@@ -1151,6 +1151,26 @@
           <div style="margin-top: 10px;"><strong>Mẫu RFI:</strong><div class="template-list" id="templates-rfi">Chưa tải trạng thái</div></div>
           <div><strong>Mẫu RP:</strong><div class="template-list" id="templates-rp">Chưa tải trạng thái</div></div>
 
+          <!-- QUẢN LÝ FILE BẢN VẼ CAD (WELD MAP PDF) CỦA TRẠM -->
+          <div style="margin-top: 18px; padding: 16px; background: #f0fdf4; border-radius: 10px; border: 1px solid #bbf7d0;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+              <div>
+                <div style="font-weight: 700; color: #166534; font-size: 15px; margin-bottom: 4px;">
+                  📐 File Bản vẽ CAD (Weld Map PDF) của trạm: <span id="drawing-site-name" class="tag" style="background: #dcfce7; color: #15803d; font-size: 13.5px; padding: 3px 8px;">TTC11</span>
+                </div>
+                <div id="drawing-status-desc" style="font-size: 13px; color: #374151;">
+                  Đang kiểm tra file bản vẽ…
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <label class="upload-label" for="upload-drawing-file" style="background: #16a34a; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  <span>📤 Nạp file Bản vẽ PDF</span>
+                </label>
+                <input id="upload-drawing-file" type="file" accept=".pdf" style="display: none;">
+              </div>
+            </div>
+          </div>
+
           <div style="margin-top: 18px; padding: 14px 16px; background: #eef6f9; border-radius: 10px; border: 1px solid #d0e2ea; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
             <div>
               <div style="font-weight: 600; color: #172b3a; margin-bottom: 3px;">
@@ -1200,8 +1220,9 @@
         <section class="card workspace" style="margin-top: 0;">
           <h2>3. Chọn biểu mẫu cần xuất</h2>
           <div class="mode-tabs" role="group" aria-label="Loại biểu mẫu">
-            <button id="mode-rfi" class="active" type="button" aria-pressed="true">RFI</button>
-            <button id="mode-rp" type="button" aria-pressed="false">RP</button>
+            <button id="mode-rfi" class="active" type="button" aria-pressed="true">RFI (Excel)</button>
+            <button id="mode-rp" type="button" aria-pressed="false">RP (Excel)</button>
+            <button id="mode-pdf" type="button" aria-pressed="false" style="font-weight: 700;">📑 Gộp PDF (RFI + RP + Bản vẽ)</button>
           </div>
           <p id="mode-description">Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI).</p>
           <div class="toolbar">
@@ -1355,13 +1376,18 @@
     function updateSelection() {
       const checked = [...document.querySelectorAll(".record-check:checked")];
       const isRp = state.mode === "rp";
+      const isPdf = state.mode === "pdf";
       $("selection-count").textContent = checked.length
-        ? (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`)
-        : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào");
+        ? (isPdf ? `Đã chọn ${checked.length} bộ hồ sơ (PDF)` : (isRp ? `Đã chọn ${checked.length} báo cáo RP` : `Đã chọn ${checked.length} số RFI`))
+        : (isPdf ? "Chưa chọn bộ hồ sơ nào" : (isRp ? "Chưa chọn báo cáo RP nào" : "Chưa chọn RFI nào"));
       $("export").disabled = checked.length === 0 || state.busy;
 
       if (!state.busy) {
-        if (isRp) {
+        if (isPdf) {
+          $("export").textContent = checked.length
+            ? `🚀 Xuất File PDF Tổng (${checked.length} bộ hồ sơ)`
+            : "Xuất File PDF Tổng (Gộp RFI - RP - Bản vẽ)";
+        } else if (isRp) {
           $("export").textContent = checked.length
             ? `Xuất ${checked.length} báo cáo RP đã chọn`
             : "Xuất báo cáo RP đã chọn";
@@ -1428,7 +1454,7 @@
         return;
       }
       for (const item of visible) {
-        const supported = isRp ? item.rp_supported : item.supported;
+        const supported = (state.mode === "pdf") ? item.supported : (isRp ? item.rp_supported : item.supported);
         const row = document.createElement("label");
         row.className = `record${supported ? "" : " unsupported"}`;
         const checkbox = document.createElement("input");
@@ -1444,7 +1470,10 @@
 
         const description = document.createElement("span");
         description.className = "record-description";
-        if (isRp) {
+        if (state.mode === "pdf") {
+          const rpInfo = item.report ? ` <strong style="color: #087f78;">➔ RP: ${item.report}</strong>` : " <span style=\"color:#64748b;\">(Chỉ RFI)</span>";
+          description.innerHTML = `<span style="font-weight:600;color:#0f172a;">${item.id}</span>${rpInfo} &middot; <span>${item.description || ""}</span>`;
+        } else if (isRp) {
           const subText = item.description || "";
           description.innerHTML = `<span style="color:#0f766e;font-weight:600;margin-right:6px;">[RFI: ${item.id}]</span><span>${subText}</span>`;
         } else {
@@ -1488,6 +1517,19 @@
       state.default_drawing_no = result.drawing_no || "";
       state.default_weld_map_no = result.weld_map_no || "";
       
+      // Update drawing card
+      if (result.drawing_info) {
+        const d = result.drawing_info;
+        if ($("drawing-site-name")) $("drawing-site-name").textContent = state.location;
+        if ($("drawing-status-desc")) {
+          if (d.has_drawing) {
+            $("drawing-status-desc").innerHTML = `<span style="color: #15803d; font-weight: 600;">✔ Đã nạp file bản vẽ:</span> <strong>${d.filename}</strong> (${d.pages} trang, ${d.size}) &middot; Cập nhật: ${d.updated} &middot; <span style="color: #047857;">Sẵn sàng cho xuất PDF &amp; tô màu mối hàn</span>`;
+          } else {
+            $("drawing-status-desc").innerHTML = `<span style="color: #b45309; font-weight: 600;">⚠ Chưa có file bản vẽ PDF cho trạm ${state.location}.</span> Vui lòng bấm nút nạp file bản vẽ PDF bên cạnh để hệ thống trích xuất và tô màu số mối hàn.`;
+          }
+        }
+      }
+
       // Update sidebar & overview
       if ($("sidebar-active-loc")) $("sidebar-active-loc").textContent = state.location;
       if ($("data-tab-current-loc")) $("data-tab-current-loc").textContent = state.location;
@@ -1800,6 +1842,28 @@
       });
     }
 
+    $("upload-drawing-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const location = $("location").value;
+      state.location = location;
+      const form = new FormData();
+      form.append("location", location);
+      form.append("file", file);
+      showMessage(`Đang tải lên file bản vẽ ${file.name} cho trạm ${location}…`);
+      try {
+        const response = await fetch("/api/upload-drawing", { method: "POST", body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Không nạp được file bản vẽ.");
+        await loadStatus();
+        showMessage(result.message, "success");
+      } catch (error) {
+        showMessage(error.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
+
     $("upload-template").addEventListener("change", async (event) => {
       const file = event.target.files[0];
       if (!file) return;
@@ -1826,7 +1890,35 @@
     $("search").addEventListener("input", renderRecords);
     $("filter-start-date").addEventListener("change", renderRecords);
     $("filter-end-date").addEventListener("change", renderRecords);
-    for (const mode of ["rfi", "rp"]) {
+    for (const mode of ["rfi", "rp", "pdf"]) {
+      $(`mode-${mode}`).addEventListener("click", () => {
+        state.mode = mode;
+        const isRp = mode === "rp";
+        const isPdf = mode === "pdf";
+        $("mode-rfi").classList.toggle("active", mode === "rfi");
+        $("mode-rp").classList.toggle("active", mode === "rp");
+        $("mode-pdf").classList.toggle("active", mode === "pdf");
+        $("mode-rfi").setAttribute("aria-pressed", String(mode === "rfi"));
+        $("mode-rp").setAttribute("aria-pressed", String(mode === "rp"));
+        $("mode-pdf").setAttribute("aria-pressed", String(mode === "pdf"));
+        if (isPdf) {
+          $("mode-description").innerHTML = "<strong>Xuất bộ hồ sơ nghiệm thu hoàn chỉnh dạng PDF:</strong> Trang bìa Bảng đối chiếu sự phù hợp ➔ Phiếu RFI ➔ Báo cáo RP ➔ Bản vẽ CAD tô màu vị trí các mối hàn tương ứng (sắp xếp theo trật tự từ nhỏ đến lớn).";
+          $("search").placeholder = "Tìm số RFI, số RP, loại, nội dung cần xuất PDF…";
+        } else if (isRp) {
+          $("mode-description").textContent = "Chọn một hoặc nhiều báo cáo RP để xuất hồ sơ kiểm tra nghiệm thu (Excel). Dữ liệu và công thức số đo mẫu được điền tự động.";
+          $("search").placeholder = "Tìm số báo cáo RP, số RFI, loại, nội dung…";
+        } else {
+          $("mode-description").textContent = "Chọn một hoặc nhiều số RFI để xuất biên bản yêu cầu kiểm tra (RFI - Excel).";
+          $("search").placeholder = "Tìm số RFI, loại, nội dung hoặc số report…";
+        }
+        $("select-all").checked = false;
+        renderRecords();
+        updateSelection();
+      });
+    }
+
+    // skip old loop
+    if (false) for (const mode of ["rfi", "rp"]) {
       $(`mode-${mode}`).addEventListener("click", () => {
         state.mode = mode;
         const isRp = mode === "rp";
@@ -1858,14 +1950,19 @@
       state.busy = true;
       $("export").disabled = true;
       const isRp = state.mode === "rp";
+      const isPdf = state.mode === "pdf";
       let elapsed = 0;
-      const baseLabel = isRp ? "Đang tạo báo cáo RP" : "Đang tạo biểu mẫu RFI";
+      const baseLabel = isPdf ? "Đang gộp PDF & tô màu bản vẽ" : (isRp ? "Đang tạo báo cáo RP" : "Đang tạo biểu mẫu RFI");
       $("export").textContent = `${baseLabel} (0s)…`;
       const timer = setInterval(() => {
         elapsed++;
         $("export").textContent = `${baseLabel} (${elapsed}s)…`;
       }, 1000);
-      showMessage(`Đang xử lý ${ids.length} ${isRp ? "báo cáo RP" : "biểu mẫu RFI"} (xử lý đa luồng)… Vui lòng giữ cửa sổ trình duyệt.`);
+      if (isPdf) {
+        showMessage(`Đang xử lý xuất PDF cho ${ids.length} bộ hồ sơ (chuyển đổi Excel, nhận diện OCR và tô màu bản vẽ CAD)… Quá trình có thể mất 10-30 giây, vui lòng chờ.`);
+      } else {
+        showMessage(`Đang xử lý ${ids.length} ${isRp ? "báo cáo RP" : "biểu mẫu RFI"} (xử lý đa luồng)… Vui lòng giữ cửa sổ trình duyệt.`);
+      }
       try {
         const response = await fetch("/api/export", {
           method: "POST",

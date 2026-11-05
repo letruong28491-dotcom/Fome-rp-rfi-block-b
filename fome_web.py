@@ -19,6 +19,7 @@ import random
 import re
 
 import shutil
+import tempfile
 
 import sys
 
@@ -12042,6 +12043,126 @@ def generate_workbook(
 
     return output_path, report_type or ""
 
+def get_site_drawing_path(location: str) -> Path | None:
+    location = validate_site_code(location, require_existing=False)
+    data_dir = site_data_dir(location)
+    cand = data_dir / f"Ban ve {location}.pdf"
+    if cand.is_file():
+        return cand
+    if data_dir.is_dir():
+        for item in data_dir.iterdir():
+            if item.is_file() and item.suffix.lower() == ".pdf" and not item.name.startswith("~"):
+                return item
+    fb = Path(f"C:/Users/LE TRUONG/Desktop/IN RFI-RP-DW/INPUT/Ban ve {location}.pdf")
+    if fb.is_file():
+        return fb
+    return None
+
+
+def get_site_drawing_info(location: str) -> dict[str, object]:
+    location = validate_site_code(location, require_existing=False)
+    p = get_site_drawing_path(location)
+    if not p or not p.is_file():
+        return {
+            "has_drawing": False,
+            "filename": None,
+            "message": f"Chưa có file bản vẽ CAD cho trạm {location}"
+        }
+    try:
+        import pymupdf
+        doc = pymupdf.open(str(p))
+        pages = len(doc)
+        doc.close()
+    except Exception:
+        pages = 1
+    st = p.stat()
+    sz_kb = round(st.st_size / 1024, 1)
+    sz_str = f"{sz_kb} KB" if sz_kb < 1024 else f"{round(sz_kb / 1024, 2)} MB"
+    return {
+        "has_drawing": True,
+        "filename": p.name,
+        "pages": pages,
+        "size": sz_str,
+        "updated": datetime.fromtimestamp(st.st_mtime).strftime("%d/%m/%Y %H:%M"),
+        "path": str(p)
+    }
+
+
+def save_uploaded_drawing(location: str, filename: str, content: bytes) -> dict[str, object]:
+    location = validate_site_code(location, require_existing=True)
+    if not filename.lower().endswith(".pdf"):
+        raise UserError("File bản vẽ phải ở định dạng PDF (.pdf).")
+    try:
+        import pymupdf
+        doc = pymupdf.open(stream=content, filetype="pdf")
+        page_count = len(doc)
+        doc.close()
+    except Exception as exc:
+        raise UserError(f"File PDF bản vẽ không hợp lệ hoặc bị lỗi: {exc}")
+    data_dir = site_data_dir(location)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    clean_name = f"Ban ve {location}.pdf"
+    target_path = data_dir / clean_name
+    if target_path.is_file():
+        bak_dir = data_dir / "Backup"
+        bak_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        try:
+            shutil.copy2(target_path, bak_dir / f"{ts}_{clean_name}")
+        except Exception:
+            pass
+    target_path.write_bytes(content)
+    try:
+        cfg = get_site_config(location)
+        cfg["drawing_pdf_file"] = clean_name
+        save_site_config(location, cfg)
+    except Exception:
+        pass
+    return get_site_drawing_info(location)
+
+
+def create_combined_pdf_download(
+    unique_ids: list[str],
+    location: str,
+    form_rows: dict[str, dict[int, object]],
+    external_tables: dict[str, list[tuple[int, tuple[object, ...]]]],
+    site_cfg: dict[str, str] | None = None
+) -> tuple[Path, str]:
+    import core_processor
+    dw_path = get_site_drawing_path(location)
+    out_dir = site_output_dir(location)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_in:
+        for r_id in unique_ids:
+            try:
+                rfi_p, _ = generate_workbook(r_id, form_rows, location, external_tables)
+                shutil.copy(rfi_p, tmp_in)
+            except Exception as e:
+                LOGGER.warning("Could not generate RFI %s: %s", r_id, e)
+            try:
+                rp_p, _ = generate_rp_workbook(r_id, form_rows, external_tables, location, site_cfg=site_cfg)
+                shutil.copy(rp_p, tmp_in)
+            except Exception as e:
+                LOGGER.warning("Could not generate RP for %s: %s", r_id, e)
+                
+        dw_str = str(dw_path.resolve()) if dw_path and dw_path.is_file() else None
+        res = core_processor.batch_process(
+            input_dir=tmp_in,
+            output_dir=str(out_dir.resolve()),
+            drawing_pdf_path=dw_str
+        )
+        if not res.get("success"):
+            msg = res.get("message", "Lỗi khi xử lý gộp PDF.")
+            if "Không tìm thấy file bản vẽ" in msg:
+                msg = f"Chưa có file Bản vẽ CAD (Weld Map PDF) cho trạm {location}. Vui lòng nạp file Bản vẽ tại Tab 'Nhập biểu mẫu' trước khi xuất PDF."
+            raise UserError(msg)
+            
+        comb_pdf = Path(res["combined_pdf"])
+        if not comb_pdf.is_file():
+            raise UserError("Không tìm thấy file PDF tổng được tạo.")
+        return comb_pdf, comb_pdf.name
+
 def create_download(
 
     selected_ids: list[str], mode: str = "rfi", location: str = DEFAULT_SITE
@@ -12052,11 +12173,11 @@ def create_download(
 
     records, form_rows, _dup_ids = load_records(location)
 
-    if mode not in {"rfi", "rp"}:
+    if mode not in {"rfi", "rp", "pdf"}:
 
         raise UserError("Không nhận diện được loại biểu mẫu cần xuất.")
 
-    support_key = "supported" if mode == "rfi" else "rp_supported"
+    support_key = "supported" if mode in ("rfi", "pdf") else "rp_supported"
 
     known_ids = {record["id"] for record in records if record[support_key]}
 
@@ -12099,6 +12220,9 @@ def create_download(
     external_tables = get_cached_rp_source_tables(location)
 
     site_cfg = get_site_config(location)
+
+    if mode == "pdf":
+        return create_combined_pdf_download(unique_ids, location, form_rows, external_tables, site_cfg)
 
     worker_count = min(4, max(1, os.cpu_count() or 2))
 
@@ -13027,6 +13151,20 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             return
 
+        if parsed.path == "/api/site-drawing":
+            user = self.get_current_user()
+            if not user:
+                self.send_json(401, {"error": "Vui lòng đăng nhập.", "authenticated": False})
+                return
+            try:
+                query = parse_qs(parsed.query)
+                req_loc = query.get("location", [""])[0] or get_active_site()
+                info = get_site_drawing_info(req_loc)
+                self.send_json(200, info)
+            except Exception as exc:
+                self.send_json(500, {"error": f"Lỗi đọc file bản vẽ: {exc}"})
+            return
+
         if parsed.path == "/api/progress":
             user = self.get_current_user()
             if not user:
@@ -13198,6 +13336,8 @@ class FomeHandler(BaseHTTPRequestHandler):
 
                         "templates": available_templates(location),
 
+                        "drawing_info": get_site_drawing_info(location),
+
                         "warning": warning,
 
                     },
@@ -13271,6 +13411,12 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             return
 
+        if self.path == "/api/upload-drawing":
+
+            self.handle_upload_drawing()
+
+            return
+
         if self.path == "/api/export":
 
             self.handle_export()
@@ -13290,6 +13436,23 @@ class FomeHandler(BaseHTTPRequestHandler):
             return
 
         self.send_error(404)
+
+    def handle_upload_drawing(self) -> None:
+        try:
+            fields, uploads = read_multipart(self)
+            location = validate_site_code(fields.get("location", DEFAULT_SITE), True)
+            if not uploads:
+                raise UserError("Vui lòng chọn file bản vẽ PDF để tải lên.")
+            filename, content = uploads[0]
+            info = save_uploaded_drawing(location, filename, content)
+            self.send_json(200, {
+                "message": f"Đã nạp file bản vẽ {info['filename']} ({info['pages']} trang) cho trạm {location} thành công!",
+                "drawing_info": info
+            })
+        except UserError as exc:
+            self.send_json(400, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Không thể lưu file bản vẽ: {exc}"})
 
     def handle_set_active_site(self) -> None:
 
@@ -13629,7 +13792,11 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             content_type = (
 
-                "application/zip"
+                "application/pdf"
+
+                if path.suffix.lower() == ".pdf"
+
+                else "application/zip"
 
                 if path.suffix.lower() == ".zip"
 
