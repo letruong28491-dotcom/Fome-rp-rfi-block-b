@@ -12434,33 +12434,45 @@ def read_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], lis
 
 
 # ==============================================================================
-# AUTHENTICATION & ACCESS CONTROL (RBAC)
+# AUTHENTICATION & ACCESS CONTROL (RBAC) WITH GMAIL APPROVAL SYSTEM
 # ==============================================================================
 USERS_FILE = DATA_DIR / "users.json"
 DEFAULT_USERS = {
     "admin": {
-        "password": "Admin@2026",
+        "email": "admin@gmail.com",
         "name": "Quản Trị Viên (Admin)",
+        "password": "Admin@2026",
+        "status": "approved",
         "sites": ["*"],
-        "role": "admin"
+        "role": "admin",
+        "created_at": "2026-11-05 08:00:00"
     },
     "ttc11": {
-        "password": "TTC11@2026",
+        "email": "ttc11@gmail.com",
         "name": "Trạm Thi Công TTC11",
+        "password": "TTC11@2026",
+        "status": "approved",
         "sites": ["TTC11"],
-        "role": "user"
+        "role": "user",
+        "created_at": "2026-11-05 08:00:00"
     },
     "ttc15": {
-        "password": "TTC15@2026",
+        "email": "ttc15@gmail.com",
         "name": "Trạm Thi Công TTC15",
+        "password": "TTC15@2026",
+        "status": "approved",
         "sites": ["TTC15"],
-        "role": "user"
+        "role": "user",
+        "created_at": "2026-11-05 08:00:00"
     },
     "ttc15a": {
-        "password": "TTC15A@2026",
+        "email": "ttc15a@gmail.com",
         "name": "Trạm Thi Công TTC15A",
+        "password": "TTC15A@2026",
+        "status": "approved",
         "sites": ["TTC15A"],
-        "role": "user"
+        "role": "user",
+        "created_at": "2026-11-05 08:00:00"
     }
 }
 
@@ -12472,6 +12484,10 @@ def load_users() -> dict[str, dict[str, object]]:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict) and data:
+                    # Ensure status field exists on all
+                    for k, v in data.items():
+                        if "status" not in v:
+                            v["status"] = "approved"
                     return data
         except Exception:
             pass
@@ -12480,17 +12496,41 @@ def load_users() -> dict[str, dict[str, object]]:
         json.dump(DEFAULT_USERS, f, ensure_ascii=False, indent=2)
     return DEFAULT_USERS
 
-def authenticate_user(username: str, password: str) -> dict[str, object] | None:
+def save_users(users: dict[str, dict[str, object]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+def find_user_by_identity(identity: str) -> tuple[str | None, dict[str, object] | None]:
+    clean_id = identity.strip().lower()
     users = load_users()
-    u = users.get(username.strip().lower())
-    if u and u.get("password") == password:
-        return {
-            "username": username.strip().lower(),
-            "name": u.get("name", username),
-            "role": u.get("role", "user"),
-            "sites": u.get("sites", [])
-        }
-    return None
+    if clean_id in users:
+        return clean_id, users[clean_id]
+    for k, u in users.items():
+        if str(u.get("email", "")).strip().lower() == clean_id:
+            return k, u
+    return None, None
+
+def authenticate_user(identity: str, password: str) -> tuple[dict[str, object] | None, str]:
+    key, u = find_user_by_identity(identity)
+    if not u or u.get("password") != password:
+        return None, "Tên đăng nhập / Gmail hoặc mật khẩu không chính xác."
+    
+    status = u.get("status", "approved")
+    if status == "pending":
+        return None, "Tài khoản Gmail của bạn đang chờ Quản trị viên (Admin) phê duyệt và cấp quyền trạm thi công. Vui lòng liên hệ Admin."
+    if status == "rejected":
+        return None, "Tài khoản của bạn đã bị từ chối hoặc vô hiệu hóa bởi Quản trị viên."
+
+    return {
+        "key": key,
+        "email": u.get("email", key),
+        "username": key,
+        "name": u.get("name", key),
+        "role": u.get("role", "user"),
+        "sites": u.get("sites", []),
+        "status": status
+    }, ""
 
 def check_site_permission(user: dict[str, object] | None, site: str) -> bool:
     if not user:
@@ -12529,11 +12569,12 @@ class FomeHandler(BaseHTTPRequestHandler):
             data = json.loads(body) if body else {}
             username = str(data.get("username", "")).strip()
             password = str(data.get("password", "")).strip()
-            user = authenticate_user(username, password)
+            user, err_msg = authenticate_user(username, password)
             if not user:
-                self.send_json(401, {"error": "Tên đăng nhập hoặc mật khẩu không chính xác."})
+                status_code = 403 if "chờ" in err_msg or "từ chối" in err_msg else 401
+                self.send_json(status_code, {"error": err_msg})
                 return
-            token = hashlib.sha256(f"{username}:{datetime.now().isoformat()}:{random.random()}".encode("utf-8")).hexdigest()
+            token = hashlib.sha256(f"{user['username']}:{datetime.now().isoformat()}:{random.random()}".encode("utf-8")).hexdigest()
             SESSIONS[token] = user
             cookie_val = f"fome_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"
             payload = json.dumps({"success": True, "user": user}, ensure_ascii=False).encode("utf-8")
@@ -12547,6 +12588,134 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
         except Exception as exc:
             self.send_json(500, {"error": f"Lỗi đăng nhập: {exc}"})
+
+    def handle_register(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body) if body else {}
+            email = str(data.get("email", "")).strip().lower()
+            name = str(data.get("name", "")).strip()
+            password = str(data.get("password", "")).strip()
+            requested_sites = data.get("requested_sites", [])
+
+            if not email or "@" not in email:
+                self.send_json(400, {"error": "Vui lòng nhập địa chỉ Gmail hợp lệ."})
+                return
+            if not name:
+                self.send_json(400, {"error": "Vui lòng nhập họ và tên của bạn."})
+                return
+            if len(password) < 6:
+                self.send_json(400, {"error": "Mật khẩu phải có tối thiểu 6 ký tự."})
+                return
+
+            users = load_users()
+            if email in users or any(u.get("email", "").lower() == email for u in users.values()):
+                self.send_json(400, {"error": f"Địa chỉ Gmail '{email}' đã được đăng ký trên hệ thống."})
+                return
+
+            users[email] = {
+                "email": email,
+                "name": name,
+                "password": password,
+                "status": "pending",
+                "role": "user",
+                "sites": requested_sites if isinstance(requested_sites, list) else [],
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            save_users(users)
+            self.send_json(200, {
+                "success": True,
+                "message": f"Đăng ký tài khoản thành công! Yêu cầu của bạn đã được gửi tới Admin. Khi Admin phê duyệt và cấp quyền trạm, bạn sẽ có thể đăng nhập."
+            })
+        except Exception as exc:
+            self.send_json(500, {"error": f"Lỗi đăng ký: {exc}"})
+
+    def handle_admin_get_users(self) -> None:
+        user = self.get_current_user()
+        if not user or user.get("role") != "admin":
+            self.send_json(403, {"error": "Chỉ Quản trị viên (Admin) mới có quyền truy cập."})
+            return
+        users = load_users()
+        user_list = []
+        for key, val in users.items():
+            user_list.append({
+                "id": key,
+                "email": val.get("email", key),
+                "name": val.get("name", key),
+                "status": val.get("status", "approved"),
+                "role": val.get("role", "user"),
+                "sites": val.get("sites", []),
+                "created_at": val.get("created_at", "")
+            })
+        self.send_json(200, {"users": user_list, "available_sites": list_sites()})
+
+    def handle_admin_update_user(self) -> None:
+        user = self.get_current_user()
+        if not user or user.get("role") != "admin":
+            self.send_json(403, {"error": "Chỉ Quản trị viên (Admin) mới có quyền truy cập."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body) if body else {}
+            target_id = str(data.get("id", "")).strip().lower()
+            new_status = data.get("status")
+            new_sites = data.get("sites")
+            new_role = data.get("role")
+
+            users = load_users()
+            if target_id not in users:
+                self.send_json(404, {"error": "Không tìm thấy người dùng."})
+                return
+
+            if new_status:
+                users[target_id]["status"] = str(new_status)
+            if new_sites is not None and isinstance(new_sites, list):
+                users[target_id]["sites"] = new_sites
+            if new_role:
+                users[target_id]["role"] = str(new_role)
+
+            save_users(users)
+
+            # Update live sessions if active
+            for tok, s_user in list(SESSIONS.items()):
+                if s_user.get("username") == target_id or s_user.get("email") == target_id:
+                    s_user["status"] = users[target_id].get("status", "approved")
+                    s_user["sites"] = users[target_id].get("sites", [])
+                    s_user["role"] = users[target_id].get("role", "user")
+
+            self.send_json(200, {
+                "success": True,
+                "message": f"Đã cập nhật phê duyệt và phân quyền cho {users[target_id].get('name')} ({target_id}) thành công."
+            })
+        except Exception as exc:
+            self.send_json(500, {"error": f"Lỗi cập nhật người dùng: {exc}"})
+
+    def handle_admin_delete_user(self) -> None:
+        user = self.get_current_user()
+        if not user or user.get("role") != "admin":
+            self.send_json(403, {"error": "Chỉ Quản trị viên (Admin) mới có quyền truy cập."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body) if body else {}
+            target_id = str(data.get("id", "")).strip().lower()
+            if target_id == "admin":
+                self.send_json(400, {"error": "Không thể xóa tài khoản Quản trị viên mặc định."})
+                return
+            users = load_users()
+            if target_id in users:
+                del users[target_id]
+                save_users(users)
+            # Remove any active sessions
+            for tok, s_user in list(SESSIONS.items()):
+                if s_user.get("username") == target_id or s_user.get("email") == target_id:
+                    del SESSIONS[tok]
+            self.send_json(200, {"success": True, "message": f"Đã xóa tài khoản {target_id} khỏi hệ thống."})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Lỗi xóa người dùng: {exc}"})
 
     def handle_logout(self) -> None:
         cookie_header = self.headers.get("Cookie", "")
@@ -12633,9 +12802,18 @@ class FomeHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/me":
             user = self.get_current_user()
             if user:
-                self.send_json(200, {"authenticated": True, "user": user})
+                # Count pending users if admin
+                pending_count = 0
+                if user.get("role") == "admin":
+                    all_u = load_users()
+                    pending_count = sum(1 for u in all_u.values() if u.get("status") == "pending")
+                self.send_json(200, {"authenticated": True, "user": user, "pending_count": pending_count})
             else:
                 self.send_json(200, {"authenticated": False})
+            return
+
+        if parsed.path == "/api/admin/users":
+            self.handle_admin_get_users()
             return
 
         if parsed.path == "/api/sites":
@@ -12871,8 +13049,20 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.handle_login()
             return
 
+        if self.path == "/api/register":
+            self.handle_register()
+            return
+
         if self.path == "/api/logout":
             self.handle_logout()
+            return
+
+        if self.path == "/api/admin/update-user":
+            self.handle_admin_update_user()
+            return
+
+        if self.path == "/api/admin/delete-user":
+            self.handle_admin_delete_user()
             return
 
         user = self.get_current_user()
