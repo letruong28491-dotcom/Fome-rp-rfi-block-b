@@ -16,19 +16,45 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-import pymupdf
-import cv2
-import numpy as np
-import win32com.client
-import pythoncom
-from rapidocr_onnxruntime import RapidOCR
+try:
+    import pymupdf
+    HAS_PYMUPDF = True
+except ImportError:
+    pymupdf = None
+    HAS_PYMUPDF = False
+
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    cv2 = None
+    np = None
+    HAS_CV2 = False
+
+try:
+    import win32com.client
+    import pythoncom
+    HAS_WIN32COM = True
+except ImportError:
+    win32com = None
+    pythoncom = None
+    HAS_WIN32COM = False
+
+try:
+    from rapidocr_onnxruntime import RapidOCR
+    HAS_RAPIDOCR = True
+except ImportError:
+    RapidOCR = None
+    HAS_RAPIDOCR = False
 
 ocr_engine = None
 
 def get_ocr_engine():
     global ocr_engine
     if ocr_engine is None:
-        ocr_engine = RapidOCR()
+        if RapidOCR is not None:
+            ocr_engine = RapidOCR()
     return ocr_engine
 
 
@@ -1268,6 +1294,12 @@ def batch_process(
     input_dir = os.path.abspath(input_dir)
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
+
+    if not HAS_WIN32COM:
+        return {
+            'success': False,
+            'message': 'Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) yêu cầu chạy trực tiếp trên máy tính có cài đặt Microsoft Office Excel (Local/Cloudflare). Trên máy chủ Render (Linux), vui lòng sử dụng chế độ xuất Excel (RFI hoặc RP) hoặc truy cập qua đường dẫn nội bộ.'
+        }
     
     actual_drawing_path = find_drawing_pdf(drawing_pdf_path, input_dir)
 
