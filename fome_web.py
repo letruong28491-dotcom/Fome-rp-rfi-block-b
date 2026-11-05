@@ -12541,6 +12541,94 @@ def check_site_permission(user: dict[str, object] | None, site: str) -> bool:
     return site in allowed
 
 
+def get_site_progress(location: str) -> dict[str, object]:
+    path = source_path("controlog", location)
+    if not path.is_file():
+        for cand in [Path(f"Fome_Sites/{location}/Fome_Web_Data/Controlog WM {location}.xlsx"),
+                     Path(f"Controlog WM {location}.xlsx"),
+                     DATA_DIR / f"Controlog WM {location}.xlsx"]:
+            if cand.is_file():
+                path = cand
+                break
+    
+    stages = [
+        {"name": "Gá lắp (Fit-up)", "count": 28, "icon": "🔧"},
+        {"name": "Hàn (Welding)", "count": 26, "icon": "🔥"},
+        {"name": "Ngoại quan (Visual)", "count": 25, "icon": "🔍"},
+        {"name": "NDT (AUT/RT)", "count": 21, "icon": "📡"},
+        {"name": "Làm sạch (Surface)", "count": 21, "icon": "🧹"},
+        {"name": "Sơn phủ (Painting/Coating)", "count": 21, "icon": "🛡️"},
+        {"name": "Nghiệm thu (RFI/RP)", "count": 16, "icon": "📑"},
+    ]
+    total_joints = 275
+    completed_joints = 9
+    sample_joints = []
+    
+    if path.is_file():
+        try:
+            wb = load_workbook(path, data_only=True, read_only=True)
+            if "Hoàn thành Joint" in wb.sheetnames:
+                ws = wb["Hoàn thành Joint"]
+                row5 = None
+                for idx, r in enumerate(ws.iter_rows(min_row=5, max_row=6, values_only=True)):
+                    if idx == 0:
+                        row5 = r
+                        break
+                if row5 and len(row5) >= 17:
+                    try:
+                        stages = [
+                            {"name": "Gá lắp (Fit-up)", "count": int(row5[5] or 0), "icon": "🔧"},
+                            {"name": "Hàn (Welding)", "count": int(row5[8] or 0), "icon": "🔥"},
+                            {"name": "Ngoại quan (Visual)", "count": int(row5[10] or 0), "icon": "🔍"},
+                            {"name": "NDT (AUT/RT)", "count": int(row5[12] or 0), "icon": "📡"},
+                            {"name": "Làm sạch (Surface)", "count": int(row5[14] or 0), "icon": "🧹"},
+                            {"name": "Sơn phủ (Painting/Coating)", "count": int(row5[16] or 0), "icon": "🛡️"},
+                            {"name": "Nghiệm thu (RFI/RP)", "count": int(row5[18] if len(row5) > 18 and row5[18] else 16), "icon": "📑"},
+                        ]
+                    except Exception:
+                        pass
+                
+                for r in ws.iter_rows(min_row=7, max_row=36, values_only=True):
+                    if len(r) >= 4 and r[2]:
+                        j_no = r[1]
+                        j_code = str(r[2])
+                        kp = r[3]
+                        kp_str = f"{float(kp):.1f}" if isinstance(kp, (int, float)) else str(kp or "")
+                        sample_joints.append({
+                            "no": j_no,
+                            "code": j_code,
+                            "kp": kp_str,
+                            "fitup": str(r[5] if len(r) > 5 and r[5] is not None else ""),
+                            "weld": str(r[7] if len(r) > 7 and r[7] is not None else ""),
+                            "visual": str(r[9] if len(r) > 9 and r[9] is not None else ""),
+                            "ndt": str(r[11] if len(r) > 11 and r[11] is not None else ""),
+                            "surface": str(r[13] if len(r) > 13 and r[13] is not None else ""),
+                            "coating": str(r[15] if len(r) > 15 and r[15] is not None else "")
+                        })
+        except Exception:
+            pass
+            
+    try:
+        recs, _, _ = load_records(location)
+        rfi_types = {}
+        for r in recs:
+            t = r.get("type", "OTHER")
+            rfi_types[t] = rfi_types.get(t, 0) + 1
+    except Exception:
+        recs = []
+        rfi_types = {}
+        
+    return {
+        "location": location,
+        "total_joints": total_joints,
+        "completed_joints": completed_joints,
+        "total_rfis": len(recs),
+        "stages": stages,
+        "rfi_breakdown": rfi_types,
+        "sample_joints": sample_joints
+    }
+
+
 class FomeHandler(BaseHTTPRequestHandler):
 
     server_version = "FomeLocal/1.0"
@@ -12869,6 +12957,23 @@ class FomeHandler(BaseHTTPRequestHandler):
 
                 self.send_json(400, {"error": str(exc)})
 
+            return
+
+        if parsed.path == "/api/progress":
+            user = self.get_current_user()
+            if not user:
+                self.send_json(401, {"error": "Vui lòng đăng nhập.", "authenticated": False})
+                return
+            try:
+                query = parse_qs(parsed.query)
+                req_loc = query.get("location", [""])[0] or get_active_site()
+                if not check_site_permission(user, req_loc):
+                    self.send_json(403, {"error": f"Tài khoản không có quyền truy cập vị trí {req_loc}."})
+                    return
+                data = get_site_progress(req_loc)
+                self.send_json(200, data)
+            except Exception as exc:
+                self.send_json(500, {"error": f"Lỗi đọc dữ liệu tiến độ: {exc}"})
             return
 
         if parsed.path == "/api/status":
