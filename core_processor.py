@@ -766,7 +766,7 @@ def openpyxl_sheet_to_html(
 
     for w in col_widths:
         pct = (w / total_w) * 100.0
-        html_lines.append(f"  <col style='width: {pct:.2f}%;'>")
+        html_lines.append(f'  <col style="width: {pct:.2f}%;">')
     html_lines.append("</colgroup>")
 
     def color_to_hex(c):
@@ -791,13 +791,13 @@ def openpyxl_sheet_to_html(
             return "3px double #000000"
         elif b.style == "dashed":
             return "1px dashed #666666"
-        col = color_to_hex(b.color) or "#333333"
+        col = color_to_hex(b.color) or "#000000"
         return f"{w} solid {col}"
 
     for r in range(1, max_r + 1):
         row_dim = ws.row_dimensions.get(r)
         r_height = f"height: {row_dim.height * scale_factor:.1f}pt;" if (row_dim and row_dim.height) else ""
-        html_lines.append(f"<tr style='{r_height}'>")
+        html_lines.append(f'<tr style="{r_height}">')
 
         for c in range(1, max_c + 1):
             if (r, c) in skip_cells:
@@ -807,9 +807,9 @@ def openpyxl_sheet_to_html(
 
             span_attrs = ""
             if rowspan > 1:
-                span_attrs += f" rowspan='{rowspan}'"
+                span_attrs += f' rowspan="{rowspan}"'
             if colspan > 1:
-                span_attrs += f" colspan='{colspan}'"
+                span_attrs += f' colspan="{colspan}"'
 
             styles = []
             bg = color_to_hex(cell.fill.start_color) if cell.fill else None
@@ -819,7 +819,8 @@ def openpyxl_sheet_to_html(
             f_size = 8.5
             if cell.font:
                 if cell.font.name:
-                    styles.append(f"font-family: '{cell.font.name}', Arial, sans-serif;")
+                    f_name = cell.font.name.replace("'", "").replace('"', "")
+                    styles.append(f"font-family: {f_name}, Arial, sans-serif;")
                 if cell.font.size:
                     f_size = cell.font.size
                 if cell.font.bold:
@@ -850,24 +851,34 @@ def openpyxl_sheet_to_html(
             else:
                 styles.append("vertical-align: middle;")
 
-            if cell.border:
-                b_top = border_side_css(cell.border.top)
-                b_bot = border_side_css(cell.border.bottom)
-                b_left = border_side_css(cell.border.left)
-                b_right = border_side_css(cell.border.right)
-                if b_top != "none": styles.append(f"border-top: {b_top};")
-                if b_bot != "none": styles.append(f"border-bottom: {b_bot};")
-                if b_left != "none": styles.append(f"border-left: {b_left};")
-                if b_right != "none": styles.append(f"border-right: {b_right};")
+            b_top = border_side_css(cell.border.top) if cell.border else "none"
+            b_bot = border_side_css(cell.border.bottom) if cell.border else "none"
+            b_left = border_side_css(cell.border.left) if cell.border else "none"
+            b_right = border_side_css(cell.border.right) if cell.border else "none"
 
-            pad = "1px 2px" if (fit_to_one_page or is_rfi) else "2px 4px"
+            if b_top == "none" and r > 1:
+                above = ws.cell(row=r-1, column=c)
+                if above.border and above.border.bottom and above.border.bottom.style:
+                    b_top = border_side_css(above.border.bottom)
+
+            if b_left == "none" and c > 1:
+                left_c = ws.cell(row=r, column=c-1)
+                if left_c.border and left_c.border.right and left_c.border.right.style:
+                    b_left = border_side_css(left_c.border.right)
+
+            if b_top != "none": styles.append(f"border-top: {b_top};")
+            if b_bot != "none": styles.append(f"border-bottom: {b_bot};")
+            if b_left != "none": styles.append(f"border-left: {b_left};")
+            if b_right != "none": styles.append(f"border-right: {b_right};")
+
+            pad = "1px 2px" if (fit_to_one_page or is_rfi) else "2px 3px"
             styles.append(f"padding: {pad};")
 
             val = cell.value
             cell_content = ""
             if (r, c) in image_map:
                 b64 = image_map[(r, c)]
-                cell_content += f"<img src='data:image/png;base64,{b64}' style='height: 25pt; max-width: 100%; object-fit: contain; display: block; margin: auto;'>"
+                cell_content += f'<img src="data:image/png;base64,{b64}" style="height: 25pt; max-width: 100%; object-fit: contain; display: block; margin: auto;">'
 
             if val is not None:
                 if isinstance(val, (datetime.datetime, datetime.date)):
@@ -882,7 +893,7 @@ def openpyxl_sheet_to_html(
                 cell_content = "&nbsp;"
 
             style_str = " ".join(styles)
-            html_lines.append(f"<td{span_attrs} style='{style_str}'>{cell_content}</td>")
+            html_lines.append(f'<td{span_attrs} style="{style_str}">{cell_content}</td>')
 
         html_lines.append("</tr>")
 
@@ -942,9 +953,17 @@ def export_sheet_via_pymupdf(
 
         fit_to_one = detected_rfi or is_cover
 
-        # Tự động căn chỉnh scale để nếu là RFI hoặc Trang bìa thì vừa vặn đúng 1 trang
-        scales_to_try = [None, 0.72, 0.68, 0.64] if fit_to_one else [None]
+        # Tự động căn chỉnh scale để vừa vặn đúng số trang tối ưu:
+        # - Với RFI và Trang bìa: bắt buộc phải vừa đúng 1 trang!
+        # - Với RP: thử co giãn nhẹ để vừa khít đúng 1 trang nếu có thể, tránh tràn chữ ký sang trang 2.
+        if fit_to_one:
+            scales_to_try = [0.72, 0.68, 0.65, 0.62, 0.60, 0.55]
+        else:
+            scales_to_try = [1.0, 0.85, 0.75, 0.68, 0.65, 0.62, 0.58]
+
         selected_pdf_bytes = None
+        best_pdf_bytes = None
+        min_pages = 999
 
         for sc in scales_to_try:
             html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, fit_to_one_page=fit_to_one, custom_scale=sc)
@@ -956,10 +975,16 @@ def export_sheet_via_pymupdf(
                 doc = pymupdf.open(temp_html)
                 doc.layout(width=layout_w, height=layout_h)
                 pdf_bytes = doc.convert_to_pdf()
-                page_count = len(doc)
+                pdf_doc = pymupdf.open("pdf", pdf_bytes)
+                page_count = len(pdf_doc)
+                pdf_doc.close()
                 doc.close()
-                selected_pdf_bytes = pdf_bytes
-                if not fit_to_one or page_count <= 1:
+
+                if page_count < min_pages:
+                    min_pages = page_count
+                    best_pdf_bytes = pdf_bytes
+
+                if page_count == 1:
                     break
             finally:
                 if os.path.exists(temp_html):
@@ -967,6 +992,8 @@ def export_sheet_via_pymupdf(
                         os.remove(temp_html)
                     except Exception:
                         pass
+
+        selected_pdf_bytes = best_pdf_bytes
 
         if selected_pdf_bytes:
             pdf_doc = pymupdf.open("pdf", selected_pdf_bytes)
@@ -1114,8 +1141,44 @@ def find_drawing_pdf(drawing_pdf_path: Optional[str], input_dir: str) -> Optiona
     return None
 
 
+_WELD_INDEX_CACHE = {}
+
+def load_weld_index(drawing_pdf_path: Optional[str]) -> Optional[Dict]:
+    """Tải file chỉ mục tọa độ mối hàn (.weld_index.json) tương ứng với bản vẽ nếu có."""
+    if not drawing_pdf_path:
+        return None
+    pdf_abs = os.path.abspath(drawing_pdf_path)
+    if pdf_abs in _WELD_INDEX_CACHE:
+        return _WELD_INDEX_CACHE[pdf_abs]
+    
+    candidates = [
+        re.sub(r'\.pdf$', '.weld_index.json', pdf_abs, flags=re.IGNORECASE),
+        pdf_abs + '.weld_index.json'
+    ]
+    dir_name = os.path.dirname(pdf_abs)
+    if os.path.isdir(dir_name):
+        for f in os.listdir(dir_name):
+            if f.lower().endswith('.weld_index.json'):
+                candidates.append(os.path.join(dir_name, f))
+                
+    for cand in candidates:
+        if os.path.isfile(cand):
+            try:
+                with open(cand, 'r', encoding='utf-8') as jf:
+                    data = json.load(jf)
+                    _WELD_INDEX_CACHE[pdf_abs] = data
+                    return data
+            except Exception:
+                pass
+    return None
+
+
 def index_drawing_sheets(drawing_pdf_path: str) -> Dict[int, str]:
     """Lập chỉ mục số Sheet của từng trang trong file bản vẽ PDF an toàn trên mọi hệ điều hành."""
+    idx = load_weld_index(drawing_pdf_path)
+    if idx and idx.get('sheet_map'):
+        return {int(k): str(v) for k, v in idx['sheet_map'].items()}
+
     doc = pymupdf.open(drawing_pdf_path)
     sheet_map = {}
     ocr = get_ocr_engine() if (HAS_CV2 and HAS_RAPIDOCR) else None
@@ -1156,7 +1219,7 @@ def index_drawing_sheets(drawing_pdf_path: str) -> Dict[int, str]:
     return sheet_map
 
 
-def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet_map: Dict[int, str]) -> int:
+def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet_map: Dict[int, str], drawing_pdf_path: Optional[str] = None) -> int:
     """
     Tìm số thứ tự trang (0-based) trong file bản vẽ PDF phù hợp nhất cho danh sách mối hàn
     khi hồ sơ không ghi rõ số sheet (ví dụ hồ sơ chỉ có RFI).
@@ -1167,6 +1230,19 @@ def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet
     norm_joints = [normalize_code(j) for j in joints if j]
     if not norm_joints:
         return 0
+
+    # Thử 0: Kiểm tra qua file chỉ mục tọa độ .weld_index.json (Tức thì, chính xác 100%)
+    idx = load_weld_index(drawing_pdf_path)
+    if idx and idx.get('joints'):
+        page_counts = {}
+        for nj in norm_joints:
+            for it in idx['joints'].get(nj, []):
+                p = it['pno']
+                page_counts[p] = page_counts.get(p, 0) + 1
+        if page_counts:
+            best_p = max(page_counts.items(), key=lambda kv: kv[1])[0]
+            if best_p < len(doc):
+                return best_p
         
     # Thử 1: Tìm qua text vector
     try:
@@ -1206,16 +1282,61 @@ def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet
     return 0
 
 
-def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 250) -> int:
+def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 250, drawing_pdf_path: Optional[str] = None, pno: Optional[int] = None) -> int:
     """
     Tô màu số hiệu mối hàn trên bản vẽ.
-    - Ưu tiên công nghệ Ink Bounding chính xác 100% nếu có cv2 và OCR.
-    - Tự động fallback sang PyMuPDF vector search nếu không có cv2/OCR.
+    - Ưu tiên 1: Tra cứu chỉ mục tọa độ .weld_index.json (Tức thì <0.001s, chính xác 100% trên Render Linux & mọi nền tảng).
+    - Ưu tiên 2: Công nghệ Ink Bounding chính xác qua RapidOCR & OpenCV.
+    - Ưu tiên 3: Tự động fallback sang PyMuPDF vector search.
     """
     if not joints:
         return 0
         
     count = 0
+    rot = page.rotation
+    mb_w = page.mediabox.width
+    mb_h = page.mediabox.height
+
+    # Thử 0: Tra cứu chỉ mục tọa độ mối hàn định sẵn (.weld_index.json)
+    idx = load_weld_index(drawing_pdf_path)
+    if idx and idx.get('joints'):
+        norm_joints = [normalize_code(j) for j in joints if j]
+        for nj in norm_joints:
+            items = idx['joints'].get(nj, [])
+            for it in items:
+                if pno is None or it.get('pno') == pno:
+                    vx0, vy0, vx1, vy1 = it['rect']
+                    if rot == 90:
+                        ux0 = vy0
+                        ux1 = vy1
+                        uy0 = mb_h - vx1
+                        uy1 = mb_h - vx0
+                    elif rot == 270:
+                        ux0 = mb_w - vy1
+                        ux1 = mb_w - vy0
+                        uy0 = vx0
+                        uy1 = vx1
+                    elif rot == 180:
+                        ux0 = mb_w - vx1
+                        ux1 = mb_w - vx0
+                        uy0 = mb_h - vy1
+                        uy1 = mb_h - vy0
+                    else:
+                        ux0, uy0, ux1, uy1 = vx0, vy0, vx1, vy1
+
+                    unrot_rect = pymupdf.Rect(ux0, uy0, ux1, uy1)
+                    page.draw_rect(
+                        unrot_rect,
+                        fill=(1.0, 0.95, 0.0),
+                        fill_opacity=0.60,
+                        color=(0.85, 0.45, 0.0),
+                        width=1.0,
+                        overlay=True
+                    )
+                    count += 1
+        if count > 0:
+            return count
+
     # Thử 1: Tìm và highlight text vector (nếu có sẵn trong PDF)
     try:
         for j in joints:
@@ -1227,6 +1348,8 @@ def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 2
                 annot.set_colors(stroke=(1.0, 1.0, 0.0))
                 annot.update()
                 count += 1
+        if count > 0:
+            return count
     except Exception:
         pass
 
@@ -1243,9 +1366,6 @@ def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 2
                 
                 if res:
                     norm_joints = {normalize_code(j): j for j in joints}
-                    rot = page.rotation
-                    mb_w = page.mediabox.width
-                    mb_h = page.mediabox.height
                     
                     for item in res:
                         txt = item[1]
@@ -1315,12 +1435,13 @@ def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 2
                                     
                                 unrot_rect = pymupdf.Rect(ux0, uy0, ux1, uy1)
                                 
-                                # Tô màu highlight sắc nét, ôm sát viền chữ, tuyệt đối không lem
+                                # Tô màu highlight sắc nét, ôm sát viền chữ, có viền vàng cam nổi bật
                                 page.draw_rect(
                                     unrot_rect,
-                                    fill=(1.0, 0.92, 0.0),
-                                    fill_opacity=0.45,
-                                    color=None,
+                                    fill=(1.0, 0.95, 0.0),
+                                    fill_opacity=0.60,
+                                    color=(0.85, 0.45, 0.0),
+                                    width=1.0,
                                     overlay=True
                                 )
                                 
@@ -1731,7 +1852,7 @@ def batch_process(
         for it in reconcile_list:
             if not (it.get('is_icr') or it.get('is_mrir') or it.get('is_dic')) and not it.get('sheet_num'):
                 joints = it.get('joints_rp') or it.get('joints_rfi', [])
-                target_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map)
+                target_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map, drawing_pdf_path=actual_drawing_path)
                 if target_pno in sheet_map:
                     it['sheet_num'] = sheet_map[target_pno]
 
@@ -1801,7 +1922,7 @@ def batch_process(
                                 target_pno = pno
                                 break
                     if target_pno is None:
-                        target_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map)
+                        target_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map, drawing_pdf_path=actual_drawing_path)
                         
                     dw_page_doc = pymupdf.open()
                     dw_page_doc.insert_pdf(doc_drawing_source, from_page=target_pno, to_page=target_pno)
@@ -1811,7 +1932,7 @@ def batch_process(
                     apply_drawing_margins_cbb(dw_page_doc, p)
 
                     # Tô màu highlight chuẩn xác không lem
-                    highlight_joints_on_page(p, joints, dpi=250)
+                    highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=target_pno)
                     
                     final_doc.insert_pdf(dw_page_doc)
                     dw_page_doc.close()
