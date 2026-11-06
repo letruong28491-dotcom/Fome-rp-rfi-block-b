@@ -687,395 +687,6 @@ def safe_open_workbook(excel_app, file_path: str, read_only: bool = True, target
     return wb, None
 
 
-def get_column_width(ws, col_idx: int) -> float:
-    """Lấy độ rộng cột chuẩn xác từ openpyxl kể cả khi cột nằm trong dải nhóm min..max."""
-    let = get_column_letter(col_idx)
-    dim = ws.column_dimensions.get(let)
-    if dim and dim.width:
-        return float(dim.width)
-    for k, d in ws.column_dimensions.items():
-        c_min = getattr(d, 'min', None)
-        c_max = getattr(d, 'max', None)
-        if c_min is not None and c_max is not None and c_min <= col_idx <= c_max and d.width:
-            return float(d.width)
-    if ws.sheet_format and ws.sheet_format.defaultColWidth:
-        return float(ws.sheet_format.defaultColWidth)
-    return 10.0
-
-
-def openpyxl_sheet_to_html(
-    ws,
-    orientation: str = "landscape",
-    is_rfi: bool = False,
-    fit_to_one_page: bool = False,
-    custom_scale: Optional[float] = None
-) -> str:
-    """
-    Chuyển đổi một worksheet của openpyxl sang mã HTML hoàn chỉnh với CSS in ấn A4 chuẩn xác.
-    Đảm bảo khớp 100% tỷ lệ form mẫu gốc:
-    - Parse chính xác PrintArea từ Excel để không bị dư thừa ô/cột trống.
-    - Lấy đúng kích thước cột (bao gồm các cột giờ 1-24 bị gom nhóm).
-    - Nhúng logo đúng tỷ lệ gốc và định dạng ảnh (JPEG/PNG) không bị méo hay thu nhỏ.
-    - Giữ toàn vẹn viền bảng (border), font, căn lề và khung ký tên.
-    """
-    # 1. Bounding box từ PrintArea hoặc dữ liệu thực tế
-    min_r, max_r, min_c, max_c = 1, ws.max_row or 1, 1, ws.max_column or 1
-    if ws.print_area:
-        pa_clean = ws.print_area.split('!')[-1].replace('$', '')
-        m = re.match(r'([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)', pa_clean)
-        if m:
-            c1_str, r1_str, c2_str, r2_str = m.groups()
-            min_c = openpyxl.utils.column_index_from_string(c1_str)
-            max_c = openpyxl.utils.column_index_from_string(c2_str)
-            min_r = int(r1_str)
-            max_r = int(r2_str)
-    else:
-        actual_max_r, actual_max_c = 1, 1
-        for r in range(1, min(max_r + 1, 1000)):
-            for c in range(1, min(max_c + 1, 100)):
-                cell = ws.cell(row=r, column=c)
-                has_val = cell.value is not None
-                has_border = bool(cell.border and (
-                    (cell.border.bottom and cell.border.bottom.style) or 
-                    (cell.border.top and cell.border.top.style) or 
-                    (cell.border.left and cell.border.left.style) or 
-                    (cell.border.right and cell.border.right.style)
-                ))
-                has_fill = bool(cell.fill and cell.fill.start_color and 
-                                str(cell.fill.start_color.value or '') not in ('00000000', 'FFFFFFFF', '0', ''))
-                if has_val or has_border or has_fill:
-                    actual_max_r = max(actual_max_r, r)
-                    actual_max_c = max(actual_max_c, c)
-        max_r = max(actual_max_r, 1)
-        max_c = max(actual_max_c, 1)
-
-    # 2. Merged cells mapping
-    merged_map = {}
-    skip_cells = set()
-    for rng in ws.merged_cells.ranges:
-        r1, r2 = max(rng.min_row, min_r), min(rng.max_row, max_r)
-        c1, c2 = max(rng.min_col, min_c), min(rng.max_col, max_c)
-        if r1 <= r2 and c1 <= c2:
-            rowspan = r2 - r1 + 1
-            colspan = c2 - c1 + 1
-            merged_map[(r1, c1)] = (rowspan, colspan)
-            for r in range(r1, r2 + 1):
-                for c in range(c1, c2 + 1):
-                    if (r, c) != (r1, c1):
-                        skip_cells.add((r, c))
-
-    # 3. Logo & Images mapping (có cache bytes để tránh lỗi I/O closed file khi thử nhiều scale)
-    image_map = {}
-    if hasattr(ws, '_images'):
-        for img in ws._images:
-            try:
-                anc = getattr(img, 'anchor', None)
-                img_r, img_c = None, None
-                if hasattr(anc, '_from'):
-                    img_r = anc._from.row + 1
-                    img_c = anc._from.col + 1
-                elif hasattr(anc, 'from'):
-                    img_r = getattr(anc, 'from').row + 1
-                    img_c = getattr(anc, 'from').col + 1
-                if img_r and img_c:
-                    if not hasattr(img, '_cached_raw_bytes'):
-                        try:
-                            img._cached_raw_bytes = img._data()
-                        except Exception:
-                            img._cached_raw_bytes = None
-                    raw_bytes = getattr(img, '_cached_raw_bytes', None)
-                    if raw_bytes:
-                        b64_str = base64.b64encode(raw_bytes).decode('ascii')
-                        fmt = getattr(img, 'format', 'png') or 'png'
-                        mime = 'image/jpeg' if fmt.lower() in ('jpg', 'jpeg') else 'image/png'
-                        image_map[(img_r, img_c)] = (mime, b64_str)
-            except Exception:
-                pass
-
-    # 4. Column widths
-    col_widths = []
-    total_w = 0.0
-    for c in range(min_c, max_c + 1):
-        w = get_column_width(ws, c)
-        col_widths.append(w)
-        total_w += w
-
-    # 5. Scale factor calculation
-    if custom_scale is not None:
-        scale_factor = custom_scale
-    else:
-        total_row_height = sum(ws.row_dimensions[r].height or (ws.sheet_format.defaultRowHeight or 18.0) for r in range(min_r, max_r + 1))
-        usable_h = 540.0 if orientation == "landscape" else 760.0
-        if total_row_height > usable_h:
-            scale_factor = max(0.60, min(1.0, usable_h / total_row_height))
-        else:
-            scale_factor = 1.0
-
-    # 6. Page setup margins
-    pm = ws.page_margins
-    top_mm = round((pm.top or 0.2) * 25.4, 1) if pm else 5.0
-    bot_mm = round((pm.bottom or 0.2) * 25.4, 1) if pm else 5.0
-    left_mm = round((pm.left or 0.2) * 25.4, 1) if pm else 5.0
-    right_mm = round((pm.right or 0.2) * 25.4, 1) if pm else 5.0
-    top_mm = max(3.0, min(top_mm, 6.0))
-    bot_mm = max(3.0, min(bot_mm, 6.0))
-    left_mm = max(3.0, min(left_mm, 6.0))
-    right_mm = max(3.0, min(right_mm, 6.0))
-    margin_css = f"{top_mm}mm {right_mm}mm {bot_mm}mm {left_mm}mm"
-
-    total_page_w = 841.89 if orientation == "landscape" else 595.28
-    usable_w = total_page_w - ((left_mm + right_mm) / 25.4 * 72.0)
-    col_w_pts = [(w / (total_w or 1.0)) * usable_w for w in col_widths]
-
-    page_css = "A4 landscape" if orientation == "landscape" else "A4 portrait"
-
-    html_lines = [
-        "<!DOCTYPE html>",
-        "<html><head><meta charset='utf-8'>",
-        "<style>",
-        f"  @page {{ size: {page_css}; margin: {margin_css}; }}",
-        "  body { font-family: 'Times New Roman', Arial, sans-serif; margin: 0; padding: 0; background: white; line-height: 1.15; }",
-        f"  table {{ border-collapse: collapse; table-layout: fixed; width: {usable_w:.2f}pt; border-spacing: 0; }}",
-        "  td { box-sizing: border-box; overflow: hidden; word-break: break-word; }",
-        "</style></head><body>",
-        f'<table style="width: {usable_w:.2f}pt; table-layout: fixed; border-collapse: collapse;">',
-        '  <tr style="height: 0px; line-height: 0; font-size: 0;">'
-    ]
-
-    for cw in col_w_pts:
-        html_lines.append(f'    <td style="width: {cw:.2f}pt; min-width: {cw:.2f}pt; max-width: {cw:.2f}pt; height: 0; padding: 0; margin: 0; border: none;"></td>')
-    html_lines.append('  </tr>')
-
-    def color_to_hex(c):
-        if not c:
-            return None
-        val = getattr(c, "rgb", None) or getattr(c, "value", None)
-        if not val or not isinstance(val, str):
-            return None
-        if len(val) == 8:
-            return f"#{val[2:]}"
-        elif len(val) == 6:
-            return f"#{val}"
-        return None
-
-    def border_side_css(b):
-        if not b or not b.style:
-            return "none"
-        w = "1px"
-        if b.style in ("medium", "thick"):
-            w = "2px"
-        elif b.style == "double":
-            return "3px double #000000"
-        elif b.style == "dashed":
-            return "1px dashed #666666"
-        col = color_to_hex(b.color) or "#000000"
-        return f"{w} solid {col}"
-
-    for r in range(min_r, max_r + 1):
-        row_dim = ws.row_dimensions.get(r)
-        h_val = row_dim.height if (row_dim and row_dim.height) else (ws.sheet_format.defaultRowHeight or 18.0)
-        r_height = f'height: {h_val * scale_factor:.1f}pt;'
-        html_lines.append(f'<tr style="{r_height}">')
-
-        for c in range(min_c, max_c + 1):
-            if (r, c) in skip_cells:
-                continue
-            cell = ws.cell(row=r, column=c)
-            rowspan, colspan = merged_map.get((r, c), (1, 1))
-
-            span_attrs = ""
-            if rowspan > 1:
-                span_attrs += f' rowspan="{rowspan}"'
-            if colspan > 1:
-                span_attrs += f' colspan="{colspan}"'
-
-            cell_w = sum(col_w_pts[c - min_c : c - min_c + colspan])
-            cell_h = sum((ws.row_dimensions.get(r_i).height or 18.0) if ws.row_dimensions.get(r_i) else 18.0 for r_i in range(r, r + rowspan)) * scale_factor
-            styles = [f"width: {cell_w:.2f}pt;", f"max-width: {cell_w:.2f}pt;"]
-
-            bg = color_to_hex(cell.fill.start_color) if cell.fill else None
-            if bg and bg.lower() not in ("#000000", "#ffffff", "#00000000"):
-                styles.append(f"background-color: {bg};")
-
-            f_size = 8.5
-            if cell.font:
-                if cell.font.name:
-                    f_name = cell.font.name.replace("'", "").replace('"', "")
-                    styles.append(f"font-family: {f_name}, Arial, sans-serif;")
-                if cell.font.size:
-                    f_size = cell.font.size
-                if cell.font.bold:
-                    styles.append("font-weight: bold;")
-                if cell.font.italic:
-                    styles.append("font-style: italic;")
-                fc = color_to_hex(cell.font.color)
-                if fc:
-                    styles.append(f"color: {fc};")
-            styles.append(f"font-size: {f_size * scale_factor:.1f}pt;")
-
-            if cell.alignment:
-                h_align = cell.alignment.horizontal or "left"
-                if h_align in ("center", "centre"):
-                    styles.append("text-align: center;")
-                elif h_align == "right":
-                    styles.append("text-align: right;")
-                elif h_align == "left":
-                    styles.append("text-align: left;")
-
-                v_align = cell.alignment.vertical or "center"
-                if v_align in ("center", "centre"):
-                    styles.append("vertical-align: middle;")
-                elif v_align == "top":
-                    styles.append("vertical-align: top;")
-                elif v_align == "bottom":
-                    styles.append("vertical-align: bottom;")
-            else:
-                styles.append("vertical-align: middle;")
-
-            b_top = border_side_css(cell.border.top) if cell.border else "none"
-            b_bot = border_side_css(cell.border.bottom) if cell.border else "none"
-            b_left = border_side_css(cell.border.left) if cell.border else "none"
-            b_right = border_side_css(cell.border.right) if cell.border else "none"
-
-            if b_top == "none" and r > min_r:
-                above = ws.cell(row=r-1, column=c)
-                if above.border and above.border.bottom and above.border.bottom.style:
-                    b_top = border_side_css(above.border.bottom)
-            if b_bot == "none" and r < max_r:
-                below = ws.cell(row=r+1, column=c)
-                if below.border and below.border.top and below.border.top.style:
-                    b_bot = border_side_css(below.border.top)
-
-            if b_left == "none" and c > min_c:
-                left_c = ws.cell(row=r, column=c-1)
-                if left_c.border and left_c.border.right and left_c.border.right.style:
-                    b_left = border_side_css(left_c.border.right)
-            if b_right == "none" and c < max_c:
-                right_c = ws.cell(row=r, column=c+1)
-                if right_c.border and right_c.border.left and right_c.border.left.style:
-                    b_right = border_side_css(right_c.border.left)
-
-            if b_top != "none": styles.append(f"border-top: {b_top};")
-            if b_bot != "none": styles.append(f"border-bottom: {b_bot};")
-            if b_left != "none": styles.append(f"border-left: {b_left};")
-            if b_right != "none": styles.append(f"border-right: {b_right};")
-
-            pad = "1px 2px"
-            styles.append(f"padding: {pad};")
-
-            val = cell.value
-            cell_content = ""
-            if (r, c) in image_map:
-                mime, b64 = image_map[(r, c)]
-                max_img_h = max(15.0, cell_h * 0.90)
-                max_img_w = max(15.0, cell_w * 0.90)
-                cell_content += f'<img src="data:{mime};base64,{b64}" style="max-height: {max_img_h:.1f}pt; max-width: {max_img_w:.1f}pt; height: auto; width: auto; object-fit: contain; display: block; margin: auto;">'
-
-            if val is not None:
-                if isinstance(val, (datetime.datetime, datetime.date)):
-                    val_str = val.strftime('%d/%m/%Y')
-                else:
-                    val_str = html.escape(str(val)).replace('\n', '<br>')
-                if cell_content:
-                    cell_content += f"<br>{val_str}"
-                else:
-                    cell_content = val_str
-            elif not cell_content:
-                cell_content = "&nbsp;"
-
-            style_str = " ".join(styles)
-            html_lines.append(f'<td{span_attrs} style="{style_str}">{cell_content}</td>')
-
-        html_lines.append("</tr>")
-
-    html_lines.extend(["</table>", "</body></html>"])
-    return "\n".join(html_lines)
-
-
-def export_sheet_via_pymupdf(
-    file_path: str,
-    sheet_name: str,
-    output_pdf: str,
-    orientation: Optional[Union[int, str]] = None,
-    is_rfi: bool = False
-) -> None:
-    """
-    Xuất 1 sheet trong Excel sang PDF thuần Python (Pure Python via openpyxl & PyMuPDF).
-    Tự động co giãn theo tỷ lệ tối ưu cao nhất để khớp 100% form chuẩn Excel đầu vào và vừa đúng 1 trang A4.
-    Không yêu cầu Microsoft Office hay win32com, chạy mượt mà trên Render Linux, macOS và mọi hệ điều hành.
-    """
-    wb = openpyxl.load_workbook(file_path, data_only=True)
-    try:
-        target_ws = None
-        for s in wb.sheetnames:
-            if s.strip().lower() == sheet_name.strip().lower():
-                target_ws = wb[s]
-                break
-        if target_ws is None:
-            for s in wb.sheetnames:
-                if sheet_name.strip().lower() in s.strip().lower() or s.strip().lower() in sheet_name.strip().lower():
-                    target_ws = wb[s]
-                    break
-        if target_ws is None:
-            target_ws = wb.active
-
-        fname_upper = os.path.basename(file_path).upper()
-        sheet_upper = target_ws.title.upper()
-        detected_rfi = is_rfi or ('-RFI-' in fname_upper) or ('_RFI' in fname_upper) or ('RFI-' in fname_upper) or ('RFI' in sheet_upper) or fname_upper.startswith('RFI')
-
-        is_ppp = ('-PPP-' in fname_upper) or ('RP-PPP' in fname_upper) or ('PPP' in sheet_upper)
-        is_icr = ('-ICR-' in fname_upper) or ('RP-ICR' in fname_upper) or ('ICR' in sheet_upper)
-        is_mrir = ('-MRIR-' in fname_upper) or ('RP-MRIR' in fname_upper) or ('MRIR' in sheet_upper) or ('_MRIR' in fname_upper)
-        is_cover = ('BANG_DOI_CHIEU' in fname_upper) or ('BANG_DOI_CHIEU' in sheet_upper) or (sheet_name == 'Bang_Doi_Chieu')
-
-        if detected_rfi or is_ppp or is_icr or is_mrir or is_cover or orientation in (2, 'landscape'):
-            ori_str = "landscape"
-            layout_w, layout_h = 842, 595
-        elif orientation in (1, 'portrait'):
-            ori_str = "portrait"
-            layout_w, layout_h = 595, 842
-        else:
-            ps_ori = getattr(target_ws.page_setup, 'orientation', 'landscape')
-            if str(ps_ori).lower() == 'portrait':
-                ori_str = "portrait"
-                layout_w, layout_h = 595, 842
-            else:
-                ori_str = "landscape"
-                layout_w, layout_h = 842, 595
-
-        # Tự động dò tìm tỉ lệ scale tối đa (ưu tiên lớn nhất) sao cho khớp đúng 1 trang duy nhất
-        scales_to_try = [0.85, 0.82, 0.80, 0.78, 0.76, 0.74, 0.72, 0.70, 0.68, 0.66, 0.64, 0.62, 0.60, 0.58, 0.55, 0.52, 0.50, 0.45]
-
-        best_pdf_bytes = None
-        min_pages = 999
-
-        for sc in scales_to_try:
-            html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, custom_scale=sc)
-            doc = pymupdf.open("html", html_content.encode("utf-8"))
-            doc.layout(width=layout_w, height=layout_h)
-            pdf_bytes = doc.convert_to_pdf()
-            doc.close()
-
-            pdf_doc = pymupdf.open("pdf", pdf_bytes)
-            page_count = len(pdf_doc)
-            pdf_doc.close()
-
-            if page_count < min_pages:
-                min_pages = page_count
-                best_pdf_bytes = pdf_bytes
-
-            if page_count == 1:
-                best_pdf_bytes = pdf_bytes
-                break
-
-        if best_pdf_bytes:
-            os.makedirs(os.path.dirname(os.path.abspath(output_pdf)), exist_ok=True)
-            with open(os.path.abspath(output_pdf), "wb") as f_out:
-                f_out.write(best_pdf_bytes)
-    finally:
-        wb.close()
-
-
 def export_excel_sheet_to_pdf(
     excel_app,
     file_path: str,
@@ -1085,98 +696,100 @@ def export_excel_sheet_to_pdf(
     is_rfi: bool = False
 ) -> None:
     """
-    Xuất 1 sheet trong Excel sang PDF.
-    - Nếu có excel_app (Windows có Microsoft Office): Sử dụng Excel COM với đúng PageSetup.
-    - Nếu excel_app là None hoặc COM lỗi: Tự động chuyển đổi mượt mà bằng Pure Python (openpyxl + PyMuPDF),
-      hoạt động hoàn hảo trên mọi hệ điều hành (Render Linux, macOS, máy tính không có Office).
+    Xuất 1 sheet trong Excel sang PDF sử dụng Microsoft Office Excel COM nguyên bản.
+    Tuân thủ đúng định dạng in (PageSetup) của file Excel đưa vào:
+    - Đối với Phiếu RFI: Giữ nguyên 100% định dạng và tỉ lệ in đầu vào (Zoom/Scale) của file Excel đưa vào, khổ ngang.
+    - Đối với Báo cáo RP:
+      + Nếu orientation is not None: Áp dụng theo định hướng chỉ định (1: Portrait, 2: Landscape).
+      + Riêng biểu mẫu báo cáo RP-PPP, RP-ICR và RP-MRIR luôn luôn đảm bảo xuất theo khổ giấy ngang (Landscape = 2).
+      + Thiết lập FitToPagesWide = 1 và FitToPagesTall = False: Giữ cho chiều ngang vừa vặn 1 trang (không tràn cột),
+        đồng thời cho phép chiều dọc tự do hiển thị theo đúng định dạng ngắt trang đã đặt trong file Excel.
+      + Riêng RP-DIC: Điều chỉnh vùng in loại bỏ cột S rỗng 0.45pt để bảo toàn đường viền mép phải ô cuối.
     """
-    if excel_app is not None:
+    if excel_app is None:
+        raise RuntimeError(
+            "Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) yêu cầu máy tính chạy có cài đặt Microsoft Office Excel. "
+            "Vui lòng truy cập qua máy chủ nội bộ hoặc đường dẫn Cloudflare Tunnel được phát từ máy tính có Office."
+        )
+
+    wb, temp_repaired = safe_open_workbook(excel_app, file_path, read_only=True, target_sheet=sheet_name)
+    try:
+        # Tìm sheet chính xác hoặc sheet tương đồng (không phân biệt hoa/thường)
+        target_ws = None
+        for s in wb.Sheets:
+            if s.Name.strip().lower() == sheet_name.strip().lower():
+                target_ws = s
+                break
+        if target_ws is None:
+            for s in wb.Sheets:
+                if sheet_name.strip().lower() in s.Name.strip().lower() or s.Name.strip().lower() in sheet_name.strip().lower():
+                    target_ws = s
+                    break
+        if target_ws is None:
+            target_ws = wb.Sheets(1)
+
+        fname_upper = os.path.basename(file_path).upper()
+        sheet_upper = target_ws.Name.upper()
+        detected_rfi = is_rfi or ('-RFI-' in fname_upper) or ('_RFI' in fname_upper) or ('RFI-' in fname_upper) or ('RFI' in sheet_upper) or fname_upper.startswith('RFI')
+
         try:
-            wb, temp_repaired = safe_open_workbook(excel_app, file_path, read_only=True, target_sheet=sheet_name)
-            try:
-                # Tìm sheet chính xác hoặc sheet tương đồng (không phân biệt hoa/thường)
-                target_ws = None
-                for s in wb.Sheets:
-                    if s.Name.strip().lower() == sheet_name.strip().lower():
-                        target_ws = s
-                        break
-                if target_ws is None:
-                    for s in wb.Sheets:
-                        if sheet_name.strip().lower() in s.Name.strip().lower() or s.Name.strip().lower() in sheet_name.strip().lower():
-                            target_ws = s
-                            break
-                if target_ws is None:
-                    target_ws = wb.Sheets(1)
-
-                fname_upper = os.path.basename(file_path).upper()
-                sheet_upper = target_ws.Name.upper()
-                detected_rfi = is_rfi or ('-RFI-' in fname_upper) or ('_RFI' in fname_upper) or ('RFI-' in fname_upper) or ('RFI' in sheet_upper) or fname_upper.startswith('RFI')
-
-                try:
-                    target_ws.PageSetup.PaperSize = 9 # xlPaperA4
-                    target_ws.PageSetup.TopMargin = excel_app.InchesToPoints(0.20)
-                    target_ws.PageSetup.BottomMargin = excel_app.InchesToPoints(0.20)
-                    target_ws.PageSetup.LeftMargin = excel_app.InchesToPoints(0.20)
-                    target_ws.PageSetup.RightMargin = excel_app.InchesToPoints(0.20)
-                    target_ws.PageSetup.HeaderMargin = 0
-                    target_ws.PageSetup.FooterMargin = 0
-                    target_ws.PageSetup.CenterHorizontally = True
-                    target_ws.PageSetup.CenterVertically = False
-                    target_ws.PageSetup.Zoom = False
-                    target_ws.PageSetup.FitToPagesWide = 1
-                    target_ws.PageSetup.FitToPagesTall = 1
-                except Exception:
-                    pass
-
-                if detected_rfi:
-                    try:
-                        target_ws.PageSetup.Orientation = 2 # xlLandscape
-                    except Exception:
-                        pass
-                else:
-                    is_ppp = ('-PPP-' in fname_upper) or ('RP-PPP' in fname_upper) or ('PPP' in sheet_upper)
-                    is_icr = ('-ICR-' in fname_upper) or ('RP-ICR' in fname_upper) or ('ICR' in sheet_upper)
-                    is_mrir = ('-MRIR-' in fname_upper) or ('RP-MRIR' in fname_upper) or ('MRIR' in sheet_upper) or ('_MRIR' in fname_upper)
-
-                    if is_ppp or is_icr or is_mrir:
-                        try:
-                            target_ws.PageSetup.Orientation = 2 # xlLandscape
-                        except Exception:
-                            pass
-                    elif orientation is not None:
-                        try:
-                            target_ws.PageSetup.Orientation = orientation
-                        except Exception:
-                            pass
-
-                    is_rp_dic = ('RP-DIC' in fname_upper) or ('RP-DIC' in sheet_upper) or (('-DIC-' in fname_upper or '_DIC' in fname_upper or 'DIC' in sheet_upper) and not detected_rfi)
-                    if is_rp_dic:
-                        try:
-                            curr_pa = str(target_ws.PageSetup.PrintArea or '')
-                            if curr_pa and ('S' in curr_pa.upper()):
-                                new_pa = curr_pa.replace('$S', '$R').replace(':S', ':R')
-                                target_ws.PageSetup.PrintArea = new_pa
-                        except Exception:
-                            pass
-                
-                target_ws.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
-                return
-            finally:
-                try:
-                    wb.Close(False)
-                except Exception:
-                    pass
-                if temp_repaired and os.path.exists(temp_repaired):
-                    try:
-                        os.remove(temp_repaired)
-                    except Exception:
-                        pass
+            target_ws.PageSetup.PaperSize = 9 # xlPaperA4
         except Exception:
-            # Nếu Excel COM gặp lỗi, tự động fallback sang Pure Python
             pass
 
-    # Pure Python export (không cần Excel/Office)
-    export_sheet_via_pymupdf(file_path, sheet_name, output_pdf, orientation=orientation, is_rfi=is_rfi)
+        if detected_rfi:
+            # Đối với Phiếu RFI: Giữ nguyên 100% PageSetup và tỉ lệ in gốc của Excel (khổ ngang), tuyệt đối không can thiệp Zoom/Margins
+            try:
+                target_ws.PageSetup.Orientation = 2 # xlLandscape
+            except Exception:
+                pass
+        else:
+            # Đối với Báo cáo RP:
+            is_ppp = ('-PPP-' in fname_upper) or ('RP-PPP' in fname_upper) or ('PPP' in sheet_upper)
+            is_icr = ('-ICR-' in fname_upper) or ('RP-ICR' in fname_upper) or ('ICR' in sheet_upper)
+            is_mrir = ('-MRIR-' in fname_upper) or ('RP-MRIR' in fname_upper) or ('MRIR' in sheet_upper) or ('_MRIR' in fname_upper)
+
+            if is_ppp or is_icr or is_mrir:
+                # Riêng biểu mẫu RP-PPP, RP-ICR và RP-MRIR luôn luôn xuất ra theo khổ giấy ngang
+                try:
+                    target_ws.PageSetup.Orientation = 2 # xlLandscape
+                except Exception:
+                    pass
+            elif orientation is not None:
+                try:
+                    target_ws.PageSetup.Orientation = orientation
+                except Exception:
+                    pass
+
+            try:
+                target_ws.PageSetup.Zoom = False
+                target_ws.PageSetup.FitToPagesWide = 1
+                target_ws.PageSetup.FitToPagesTall = False
+            except Exception:
+                pass
+
+            # Sửa lỗi mất đường viền mép phải ô cuối cho RP-DIC (do PrintArea thừa cột S rỗng 0.45pt)
+            is_rp_dic = ('RP-DIC' in fname_upper) or ('RP-DIC' in sheet_upper) or (('-DIC-' in fname_upper or '_DIC' in fname_upper or 'DIC' in sheet_upper) and not detected_rfi)
+            if is_rp_dic:
+                try:
+                    curr_pa = str(target_ws.PageSetup.PrintArea or '')
+                    if curr_pa and ('S' in curr_pa.upper()):
+                        new_pa = curr_pa.replace('$S', '$R').replace(':S', ':R')
+                        target_ws.PageSetup.PrintArea = new_pa
+                except Exception:
+                    pass
+        
+        target_ws.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
+    finally:
+        try:
+            wb.Close(False)
+        except Exception:
+            pass
+        if temp_repaired and os.path.exists(temp_repaired):
+            try:
+                os.remove(temp_repaired)
+            except Exception:
+                pass
 
 
 def find_drawing_pdf(drawing_pdf_path: Optional[str], input_dir: str) -> Optional[str]:
@@ -1681,34 +1294,26 @@ def create_reconciliation_cover(
 
     wb.save(output_xlsx)
 
-    # Export to PDF via Excel COM (nếu có) hoặc Pure Python (không cần Office)
-    if excel_app is not None:
+    # Export to PDF via Microsoft Office Excel COM nguyên bản
+    wb_com, temp_cover = safe_open_workbook(excel_app, output_xlsx, read_only=True, target_sheet='Bang_Doi_Chieu')
+    try:
+        ws_com = wb_com.Sheets('Bang_Doi_Chieu')
+        ws_com.PageSetup.PaperSize = 9 # xlPaperA4
+        ws_com.PageSetup.Orientation = 2 # xlLandscape
+        ws_com.PageSetup.Zoom = False
+        ws_com.PageSetup.FitToPagesWide = 1
+        ws_com.PageSetup.FitToPagesTall = 1
+        ws_com.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
+    finally:
         try:
-            wb_com, temp_cover = safe_open_workbook(excel_app, output_xlsx, read_only=True, target_sheet='Bang_Doi_Chieu')
-            try:
-                ws_com = wb_com.Sheets('Bang_Doi_Chieu')
-                ws_com.PageSetup.PaperSize = 9 # xlPaperA4
-                ws_com.PageSetup.Orientation = 2 # xlLandscape
-                ws_com.PageSetup.Zoom = False
-                ws_com.PageSetup.FitToPagesWide = 1
-                ws_com.PageSetup.FitToPagesTall = 1
-                ws_com.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
-                return
-            finally:
-                try:
-                    wb_com.Close(False)
-                except Exception:
-                    pass
-                if temp_cover and os.path.exists(temp_cover):
-                    try:
-                        os.remove(temp_cover)
-                    except Exception:
-                        pass
+            wb_com.Close(False)
         except Exception:
             pass
-
-    # Pure Python export (chạy trên mọi hệ điều hành không cần Office)
-    export_sheet_via_pymupdf(output_xlsx, 'Bang_Doi_Chieu', output_pdf, orientation=2, is_rfi=False)
+        if temp_cover and os.path.exists(temp_cover):
+            try:
+                os.remove(temp_cover)
+            except Exception:
+                pass
 
 
 def build_reconcile_list(input_dir: str) -> List[Dict]:
@@ -1923,21 +1528,33 @@ def batch_process(
                 if target_pno in sheet_map:
                     it['sheet_num'] = sheet_map[target_pno]
 
-    # 4. Khởi động Excel COM nếu có sẵn (Windows với Microsoft Office)
+    # 4. Khởi động Excel COM (Bắt buộc chạy trực tiếp trên máy tính có Microsoft Office)
+    if not HAS_WIN32COM:
+        return {
+            'success': False,
+            'message': (
+                'Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) sử dụng trực tiếp Microsoft Office Excel của máy tính '
+                'để đảm bảo chuẩn xác 100% tỷ lệ in, font chữ và độ rộng cột theo biểu mẫu gốc. '
+                'Vui lòng chạy trên máy tính Windows có cài đặt Microsoft Office (truy cập qua localhost hoặc link Cloudflare Tunnel).'
+            )
+        }
+    
     excel = None
-    if HAS_WIN32COM:
-        try:
-            cleanup_headless_excel()
-            pythoncom.CoInitialize()
-            excel = win32com.client.DispatchEx('Excel.Application')
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            excel.AskToUpdateLinks = False
-            excel.AlertBeforeOverwriting = False
-            excel.EnableEvents = False
-            excel.ScreenUpdating = False
-        except Exception:
-            excel = None
+    try:
+        cleanup_headless_excel()
+        pythoncom.CoInitialize()
+        excel = win32com.client.DispatchEx('Excel.Application')
+        excel.Visible = False
+        excel.DisplayAlerts = False
+        excel.AskToUpdateLinks = False
+        excel.AlertBeforeOverwriting = False
+        excel.EnableEvents = False
+        excel.ScreenUpdating = False
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Không thể khởi động Microsoft Office Excel COM: {e}. Vui lòng kiểm tra lại phần mềm Excel trên máy.'
+        }
     
     try:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
