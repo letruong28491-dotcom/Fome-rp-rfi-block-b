@@ -225,8 +225,15 @@ def parse_rp_excel(file_path: str) -> Dict:
                 start_row = r + 1
                 break
                 
+        pipes = []
         for r in range(start_row, min(100, ws.max_row + 1)):
             val = ws.cell(r, 2).value # Cột B
+            if is_ppp:
+                pval = ws.cell(r, 3).value # Cột C: Số ống / Pipe No
+                if pval and str(pval).strip():
+                    spval = str(pval).strip()
+                    if spval not in pipes:
+                        pipes.append(spval)
             if val is None:
                 continue
             sval = str(val).strip()
@@ -297,10 +304,12 @@ def parse_rp_excel(file_path: str) -> Dict:
         'weld_map_no': weld_map_no,
         'drawing_sheet_num': drawing_sheet_num,
         'joints': joints,
+        'pipes': pipes if is_ppp else [],
         'is_icr': is_icr,
+        'is_ppp': is_ppp,
         'is_mrir': is_mrir,
         'is_dic': is_dic,
-        'item_type': 'PIPE' if is_icr else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD')),
+        'item_type': 'PIPE' if is_icr else ('PPP' if is_ppp else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD'))),
         'seq_no': extract_seq_number(report_no)
     }
 
@@ -353,19 +362,27 @@ def parse_rfi_excel(file_path: str) -> Dict:
         pipe_count = int(m_pipe.group(1))
 
     is_icr = ('ICR' in target_sheet_name.upper()) or ('-ICR-' in os.path.basename(file_path).upper())
+    is_ppp = ('PPP' in target_sheet_name.upper()) or ('-PPP-' in os.path.basename(file_path).upper())
     is_mrir = ('MRIR' in target_sheet_name.upper()) or ('-MRIR-' in os.path.basename(file_path).upper()) or ('_MRIR' in os.path.basename(file_path).upper()) or ('RFI-MRIR' in os.path.basename(file_path).upper())
     is_dic = ('DIC' in target_sheet_name.upper()) or ('-DIC-' in os.path.basename(file_path).upper()) or ('_DIC' in os.path.basename(file_path).upper()) or ('RFI-DIC' in os.path.basename(file_path).upper())
+
+    # Trích xuất danh sách ống đối với PPP
+    pipe_numbers = re.findall(r'181-[A-Za-z0-9]+', text_corpus)
+    if is_ppp and pipe_numbers and not joints_rfi:
+        joints_rfi = list(dict.fromkeys(pipe_numbers))
 
     return {
         'file_path': file_path,
         'sheet_name': target_sheet_name,
         'rfi_no': rfi_no,
         'joints': joints_rfi,
+        'pipes': pipe_numbers,
         'pipe_count': pipe_count,
         'is_icr': is_icr,
+        'is_ppp': is_ppp,
         'is_mrir': is_mrir,
         'is_dic': is_dic,
-        'item_type': 'PIPE' if is_icr else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD')),
+        'item_type': 'PIPE' if is_icr else ('PPP' if is_ppp else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD'))),
         'seq_no': extract_seq_number(rfi_no)
     }
 
@@ -428,6 +445,19 @@ def reconcile_joints(joints_rp: List[str], joints_rfi: List[str], item_type: str
                 'diff_rp_only': [],
                 'diff_rfi_only': []
             }
+
+    if item_type == 'PPP':
+        count_rp = len(joints_rp)
+        count_rfi = len(joints_rfi) if joints_rfi else count_rp
+        return {
+            'is_match': True,
+            'status': 'PHÙ HỢP',
+            'note': f'Khớp chuỗi kéo/đẩy ống ({count_rp} mối/ống)',
+            'count_rp': count_rp,
+            'count_rfi': count_rfi,
+            'diff_rp_only': [],
+            'diff_rfi_only': []
+        }
 
     norm_rp = {normalize_code(j): j for j in joints_rp}
     norm_rfi = {normalize_code(j): j for j in joints_rfi}
@@ -1068,6 +1098,17 @@ def export_excel_sheet_to_pdf(
 
                 try:
                     target_ws.PageSetup.PaperSize = 9 # xlPaperA4
+                    target_ws.PageSetup.TopMargin = excel_app.InchesToPoints(0.20)
+                    target_ws.PageSetup.BottomMargin = excel_app.InchesToPoints(0.20)
+                    target_ws.PageSetup.LeftMargin = excel_app.InchesToPoints(0.20)
+                    target_ws.PageSetup.RightMargin = excel_app.InchesToPoints(0.20)
+                    target_ws.PageSetup.HeaderMargin = 0
+                    target_ws.PageSetup.FooterMargin = 0
+                    target_ws.PageSetup.CenterHorizontally = True
+                    target_ws.PageSetup.CenterVertically = False
+                    target_ws.PageSetup.Zoom = False
+                    target_ws.PageSetup.FitToPagesWide = 1
+                    target_ws.PageSetup.FitToPagesTall = 1
                 except Exception:
                     pass
 
@@ -1091,13 +1132,6 @@ def export_excel_sheet_to_pdf(
                             target_ws.PageSetup.Orientation = orientation
                         except Exception:
                             pass
-
-                    try:
-                        target_ws.PageSetup.Zoom = False
-                        target_ws.PageSetup.FitToPagesWide = 1
-                        target_ws.PageSetup.FitToPagesTall = False
-                    except Exception:
-                        pass
 
                     is_rp_dic = ('RP-DIC' in fname_upper) or ('RP-DIC' in sheet_upper) or (('-DIC-' in fname_upper or '_DIC' in fname_upper or 'DIC' in sheet_upper) and not detected_rfi)
                     if is_rp_dic:
@@ -1332,31 +1366,14 @@ def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 2
             for it in items:
                 if pno is None or it.get('pno') == pno:
                     vx0, vy0, vx1, vy1 = it['rect']
-                    if rot == 90:
-                        ux0 = vy0
-                        ux1 = vy1
-                        uy0 = mb_h - vx1
-                        uy1 = mb_h - vx0
-                    elif rot == 270:
-                        ux0 = mb_w - vy1
-                        ux1 = mb_w - vy0
-                        uy0 = vx0
-                        uy1 = vx1
-                    elif rot == 180:
-                        ux0 = mb_w - vx1
-                        ux1 = mb_w - vx0
-                        uy0 = mb_h - vy1
-                        uy1 = mb_h - vy0
-                    else:
-                        ux0, uy0, ux1, uy1 = vx0, vy0, vx1, vy1
-
-                    unrot_rect = pymupdf.Rect(ux0, uy0, ux1, uy1)
+                    r_vis = pymupdf.Rect(vx0 - 2, vy0 - 1.5, vx1 + 2, vy1 + 1.5)
+                    r_unrot = r_vis * page.derotation_matrix
                     page.draw_rect(
-                        unrot_rect,
+                        r_unrot,
                         fill=(1.0, 0.95, 0.0),
                         fill_opacity=0.60,
                         color=(0.85, 0.45, 0.0),
-                        width=1.0,
+                        width=0.8,
                         overlay=True
                     )
                     count += 1
@@ -1712,9 +1729,10 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
             pipe_count_rfi = None
             
         is_icr = rp_info.get('is_icr', False)
+        is_ppp = rp_info.get('is_ppp', False)
         is_mrir = rp_info.get('is_mrir', False)
         is_dic = rp_info.get('is_dic', False)
-        item_type = rp_info.get('item_type', 'PIPE' if is_icr else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD')))
+        item_type = rp_info.get('item_type', 'PIPE' if is_icr else ('PPP' if is_ppp else ('MATERIAL' if is_mrir else ('EQUIPMENT' if is_dic else 'WELD'))))
         rec = reconcile_joints(rp_info['joints'], joints_rfi, item_type=item_type, rfi_pipe_count=pipe_count_rfi)
         
         item = {
@@ -1729,6 +1747,7 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
             'joints_rfi': joints_rfi,
             'pipe_count_rfi': pipe_count_rfi,
             'is_icr': is_icr,
+            'is_ppp': is_ppp,
             'is_mrir': is_mrir,
             'is_dic': is_dic,
             'item_type': item_type,
@@ -1751,6 +1770,7 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
         joints_rfi = rfi_info['joints']
         pipe_count = rfi_info.get('pipe_count')
         is_icr = ('ICR' in rfi_info['sheet_name'].upper()) or ('-ICR-' in os.path.basename(rfi_path).upper())
+        is_ppp = ('PPP' in rfi_info['sheet_name'].upper()) or ('-PPP-' in os.path.basename(rfi_path).upper())
         is_mrir = ('MRIR' in rfi_info['sheet_name'].upper()) or ('-MRIR-' in os.path.basename(rfi_path).upper()) or ('_MRIR' in os.path.basename(rfi_path).upper())
         is_dic = ('DIC' in rfi_info['sheet_name'].upper()) or ('-DIC-' in os.path.basename(rfi_path).upper()) or ('_DIC' in os.path.basename(rfi_path).upper())
         
@@ -1758,6 +1778,10 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
             item_type = 'PIPE'
             count_rfi = pipe_count if pipe_count is not None else len(joints_rfi)
             note = f"Chỉ nghiệm thu RFI ({count_rfi} ống)"
+        elif is_ppp:
+            item_type = 'PPP'
+            count_rfi = len(joints_rfi)
+            note = f"Chỉ nghiệm thu RFI ({count_rfi} mối/ống PPP)"
         elif is_mrir:
             item_type = 'MATERIAL'
             count_rfi = 1
@@ -1783,6 +1807,7 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
             'joints_rfi': joints_rfi,
             'pipe_count_rfi': pipe_count,
             'is_icr': is_icr,
+            'is_ppp': is_ppp,
             'is_mrir': is_mrir,
             'is_dic': is_dic,
             'item_type': item_type,
@@ -1954,11 +1979,11 @@ def batch_process(
                     dw_page_doc.insert_pdf(doc_drawing_source, from_page=target_pno, to_page=target_pno)
                     p = dw_page_doc[0]
                     
-                    # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
-                    apply_drawing_margins_cbb(dw_page_doc, p)
-
                     # Tô màu highlight chuẩn xác không lem
                     highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=target_pno)
+
+                    # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
+                    apply_drawing_margins_cbb(dw_page_doc, p)
                     
                     final_doc.insert_pdf(dw_page_doc)
                     dw_page_doc.close()
