@@ -1112,14 +1112,17 @@
                 (Bạn có thể đổi nhanh trạm thi công ở menu chọn trạm phía trên góc phải bất cứ lúc nào)
               </div>
             </div>
-            <div id="create-location-box" style="display: flex; flex-wrap: wrap; align-items: end; gap: 8px; border-left: 2px solid var(--line); padding-left: 14px;">
-              <label for="new-location" style="font-size: 13px; font-weight: 600;">Mã vị trí mới
-                <input id="new-location" type="text" placeholder="Ví dụ TTC16" maxlength="31" style="width: 120px;">
-              </label>
-              <label for="new-engineer-no" style="font-size: 13px; font-weight: 600; width: 180px;">Kỹ sư phụ trách
-                <input id="new-engineer-no" type="text" placeholder="Nguyễn Đức Sơn" style="width: 100%;">
-              </label>
-              <button id="create-location" type="button" style="white-space: nowrap;">Tạo hồ sơ mới</button>
+            <div style="display: flex; flex-wrap: wrap; align-items: end; gap: 8px;">
+              <button id="btn-backup-sources" type="button" style="white-space: nowrap; background: #0284c7; color: white;" title="Tải toàn bộ file nguồn của trạm hiện tại dạng ZIP về máy để lưu trữ hoặc đồng bộ">📦 Tải dữ liệu nguồn trạm (.zip)</button>
+              <div id="create-location-box" style="display: flex; flex-wrap: wrap; align-items: end; gap: 8px; border-left: 2px solid var(--line); padding-left: 14px;">
+                <label for="new-location" style="font-size: 13px; font-weight: 600;">Mã vị trí mới
+                  <input id="new-location" type="text" placeholder="Ví dụ TTC16" maxlength="31" style="width: 120px;">
+                </label>
+                <label for="new-engineer-no" style="font-size: 13px; font-weight: 600; width: 180px;">Kỹ sư phụ trách
+                  <input id="new-engineer-no" type="text" placeholder="Nguyễn Đức Sơn" style="width: 100%;">
+                </label>
+                <button id="create-location" type="button" style="white-space: nowrap;">Tạo hồ sơ mới</button>
+              </div>
             </div>
           </div>
         </section>
@@ -1695,18 +1698,24 @@
 
       for (const source of result.sources) {
         $(`name-${source.key}`).textContent = source.filename;
-        $(`status-${source.key}`).textContent = source.exists
-          ? `Đang dùng · ${new Date(source.modified).toLocaleString("vi-VN")} · ${Math.ceil(source.size / 1024)} KB`
-          : "Chưa tải file cho vị trí này.";
+        let statusText = "";
+        if (source.exists) {
+          const modTime = source.updated_at ? `Cập nhật: ${source.updated_at}` : (source.modified ? `Cập nhật: ${source.modified}` : "");
+          const updater = source.updated_by ? ` · Kỹ sư: ${source.updated_by}` : "";
+          statusText = `Đang dùng · ${modTime}${updater} · ${Math.ceil(source.size / 1024)} KB`;
+        } else {
+          statusText = "Chưa tải file cho vị trí này.";
+        }
+        $(`status-${source.key}`).textContent = statusText;
         
         // Overview files
         if (source.key === "controlog") {
           $("overview-controlog-file").textContent = source.filename;
-          $("overview-controlog-sub").textContent = source.exists ? `${Math.ceil(source.size / 1024)} KB · Sẵn sàng` : "Chưa có file";
+          $("overview-controlog-sub").textContent = source.exists ? `${Math.ceil(source.size / 1024)} KB · Sẵn sàng${source.updated_by ? ' (' + source.updated_by + ')' : ''}` : "Chưa có file";
         }
         if (source.key === "rfi_data") {
           $("overview-form-file").textContent = source.filename;
-          $("overview-form-sub").textContent = source.exists ? `${Math.ceil(source.size / 1024)} KB · Sẵn sàng` : "Chưa có file";
+          $("overview-form-sub").textContent = source.exists ? `${Math.ceil(source.size / 1024)} KB · Sẵn sàng${source.updated_by ? ' (' + source.updated_by + ')' : ''}` : "Chưa có file";
         }
       }
 
@@ -1889,6 +1898,11 @@
       $("search").value = "";
       loadStatus().catch((error) => showMessage(error.message, "error"));
       loadProgress();
+    });
+
+    $("btn-backup-sources")?.addEventListener("click", () => {
+      const loc = $("location").value || state.location;
+      window.location.href = `/api/export-site-sources?location=${encodeURIComponent(loc)}`;
     });
 
     $("btn-fix-station").addEventListener("click", async () => {

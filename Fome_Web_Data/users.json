@@ -20,5 +20,16 @@
     ],
     "role": "qc",
     "created_at": "2026-11-05 08:00:00"
+  },
+  "minhnguyen1432000@gmail.com": {
+    "email": "minhnguyen1432000@gmail.com",
+    "name": "Nguyễn Văn Minh (QC TTC11)",
+    "password": "QC@2026",
+    "status": "approved",
+    "sites": [
+      "TTC11"
+    ],
+    "role": "qc",
+    "created_at": "2026-11-06 00:44:47"
   }
 }

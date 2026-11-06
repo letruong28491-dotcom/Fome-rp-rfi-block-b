@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 
 import html
+import gc
+import io
+import time
 
 import hashlib
 
@@ -12587,6 +12590,15 @@ DEFAULT_USERS = {
         "sites": ["TTC11"],
         "role": "qc",
         "created_at": "2026-11-05 08:00:00"
+    },
+    "minhnguyen1432000@gmail.com": {
+        "email": "minhnguyen1432000@gmail.com",
+        "name": "Nguyễn Văn Minh (QC TTC11)",
+        "password": "QC@2026",
+        "status": "approved",
+        "sites": ["TTC11"],
+        "role": "qc",
+        "created_at": "2026-11-06 00:44:47"
     }
 }
 
@@ -12671,8 +12683,46 @@ def check_site_permission(user: dict[str, object] | None, site: str) -> bool:
     allowed = user.get("sites", [])
     if "*" in allowed:
         return True
-    return site in allowed
+    site_clean = str(site).strip().upper()
+    return any(str(s).strip().upper() == site_clean for s in allowed)
 
+
+
+def save_source_upload_meta(location: str, key: str, original_filename: str, file_size: int, updated_at: str, updated_by: str) -> None:
+    try:
+        folder = site_data_dir(location)
+        folder.mkdir(parents=True, exist_ok=True)
+        cfg_path = folder / "site_config.json"
+        data = {}
+        if cfg_path.is_file():
+            try:
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        if "sources_meta" not in data or not isinstance(data["sources_meta"], dict):
+            data["sources_meta"] = {}
+        data["sources_meta"][key] = {
+            "original_filename": original_filename,
+            "size": file_size,
+            "updated_at": updated_at,
+            "updated_by": updated_by
+        }
+        cfg_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[UploadMeta] Warning: Could not save upload meta: {e}")
+
+def get_source_upload_meta(location: str, key: str) -> dict:
+    try:
+        folder = site_data_dir(location)
+        cfg_path = folder / "site_config.json"
+        if cfg_path.is_file():
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            meta = data.get("sources_meta", {})
+            if isinstance(meta, dict):
+                return meta.get(key, {})
+    except Exception:
+        pass
+    return {}
 
 def get_site_progress(location: str) -> dict[str, object]:
     path = source_path("controlog", location)
@@ -12691,8 +12741,9 @@ def get_site_progress(location: str) -> dict[str, object]:
     sample_joints = []
 
     if path.is_file():
+        wb = None
         try:
-            wb = load_workbook(path, data_only=True)
+            wb = load_workbook(path, read_only=True, data_only=True)
             if "Hoàn thành Joint" in wb.sheetnames:
                 ws = wb["Hoàn thành Joint"]
                 val_total = ws.cell(row=3, column=7).value
@@ -12813,6 +12864,12 @@ def get_site_progress(location: str) -> dict[str, object]:
                     })
         except Exception:
             pass
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     try:
         recs, _, _ = load_records(location)
@@ -13117,6 +13174,10 @@ class FomeHandler(BaseHTTPRequestHandler):
             self.handle_admin_get_users()
             return
 
+        if parsed.path == "/api/export-site-sources":
+            self.handle_export_site_sources()
+            return
+
         if parsed.path == "/api/sites":
             user = self.get_current_user()
             if not user:
@@ -13270,35 +13331,22 @@ class FomeHandler(BaseHTTPRequestHandler):
                     warning = str(exc)
 
                 sources = []
-
                 for key in SOURCES:
-
                     path = source_path(key, location)
-
                     fname = path.name
-
                     stat = path.stat() if path.is_file() else None
-
+                    meta = get_source_upload_meta(location, key)
                     sources.append(
-
                         {
-
                             "key": key,
-
                             "filename": fname,
-
+                            "original_filename": meta.get("original_filename", fname),
+                            "updated_by": meta.get("updated_by", ""),
+                            "updated_at": meta.get("updated_at", ""),
                             "exists": stat is not None,
-
                             "size": stat.st_size if stat else 0,
-
-                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(
-
-                                timespec="minutes"
-
-                            ) if stat else None,
-
+                            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%d/%m/%Y %H:%M") if stat else None,
                         }
-
                     )
 
                 try:
@@ -13608,6 +13656,45 @@ class FomeHandler(BaseHTTPRequestHandler):
 
             self.send_json(400, {"error": str(exc)})
 
+
+    def handle_export_site_sources(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"error": "Vui lòng đăng nhập để tải dữ liệu."})
+            return
+        query = parse_qs(urlparse(self.path).query)
+        loc_param = query.get("location", [""])[0] or get_active_site()
+        location = validate_site_code(loc_param, True)
+        if not check_site_permission(user, location):
+            self.send_json(403, {"error": f"Tài khoản không có quyền truy cập dữ liệu của trạm {location}."})
+            return
+        folder = site_data_dir(location)
+        if not folder.is_dir():
+            self.send_json(404, {"error": f"Chưa có thư mục dữ liệu cho trạm {location}."})
+            return
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for item in folder.iterdir():
+                if item.is_file() and not item.name.startswith("~") and not item.name.endswith(".upload"):
+                    zf.write(item, item.name)
+            dwg_info = get_site_drawing_info(location)
+            if dwg_info.get("has_drawing") and dwg_info.get("path"):
+                dwg_p = Path(dwg_info["path"])
+                if dwg_p.is_file():
+                    zf.write(dwg_p, dwg_p.name)
+        zip_bytes = buf.getvalue()
+        zip_filename = f"Du_Lieu_Nguon_{location}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{zip_filename}"; filename*=UTF-8\'\'{quote(zip_filename)}',
+        )
+        self.send_header("Content-Length", str(len(zip_bytes)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(zip_bytes)
+
     def handle_upload(self) -> None:
         user = self.get_current_user()
         ok, err = check_role_permission(user, ("admin", "qc"))
@@ -13652,37 +13739,54 @@ class FomeHandler(BaseHTTPRequestHandler):
                 backup_current_source(key, location)
 
             temporary = destination.with_name(destination.name + ".upload")
-
             temporary.write_bytes(content)
 
-            temporary.replace(destination)
+            # Retry loop for file replacement on Windows
+            gc.collect()
+            replaced = False
+            last_err = None
+            for _ in range(5):
+                try:
+                    temporary.replace(destination)
+                    replaced = True
+                    break
+                except PermissionError as p_err:
+                    last_err = p_err
+                    gc.collect()
+                    time.sleep(0.15)
+                except Exception as ex:
+                    last_err = ex
+                    break
+            if not replaced:
+                try:
+                    destination.write_bytes(content)
+                    if temporary.exists():
+                        temporary.unlink(missing_ok=True)
+                except Exception:
+                    raise UserError(f"Không thể ghi đè file trên máy chủ do file đang được mở hoặc tạm khóa: {last_err}")
 
             try:
-
                 destination.touch()
-
             except Exception:
-
                 pass
 
-            _RP_SOURCE_TABLES_CACHE.pop(location, None)
+            # Lưu lại siêu dữ liệu bản cập nhật cuối cùng (người tải, thời gian, tên file gốc)
+            now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            u_name = str(user.get("name") or user.get("email") or "Kỹ sư")
+            save_source_upload_meta(location, key, filename, len(content), now_str, u_name)
 
+            _RP_SOURCE_TABLES_CACHE.pop(location, None)
             set_active_site(location)
 
             self.send_json(
-
                 200,
-
                 {
-
-                    "message": f"Đã cập nhật file {destination.name} cho {location}.",
-
+                    "message": f"Đã cập nhật và đồng bộ file {destination.name} cho {location} (Cập nhật bởi: {u_name}).",
                     "filename": destination.name,
-
                     "location": location,
-
+                    "updated_at": now_str,
+                    "updated_by": u_name,
                 },
-
             )
 
         except UserError as exc:

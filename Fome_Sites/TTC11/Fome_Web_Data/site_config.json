@@ -1,5 +1,13 @@
 {
   "drawing_no": "SWG-PTSCL18-EPC-70-PL-DAG-0002 REV.2 SHT 33/94",
   "weld_map_no": "SWG-PTSCL18-CON-70-PL-WMP-0002 REV.0 SHT 33/94",
-  "engineer_name": "Nguyễn Văn Minh"
+  "engineer_name": "Nguyễn Văn Minh",
+  "sources_meta": {
+    "controlog": {
+      "original_filename": "Controlog WM TTC11.xlsx",
+      "size": 670060,
+      "updated_at": "06/11/2026 08:30:54",
+      "updated_by": "Nguyễn Văn Minh (QC TTC11)"
+    }
+  }
 }
