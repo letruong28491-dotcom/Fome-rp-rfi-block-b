@@ -813,15 +813,19 @@ def openpyxl_sheet_to_html(
 
     # 6. Page setup margins
     pm = ws.page_margins
-    top_mm = round((pm.top or 0.3) * 25.4, 1) if pm else 5.0
-    bot_mm = round((pm.bottom or 0.25) * 25.4, 1) if pm else 5.0
-    left_mm = round((pm.left or 0.25) * 25.4, 1) if pm else 5.0
+    top_mm = round((pm.top or 0.2) * 25.4, 1) if pm else 5.0
+    bot_mm = round((pm.bottom or 0.2) * 25.4, 1) if pm else 5.0
+    left_mm = round((pm.left or 0.2) * 25.4, 1) if pm else 5.0
     right_mm = round((pm.right or 0.2) * 25.4, 1) if pm else 5.0
     top_mm = max(3.0, min(top_mm, 6.0))
     bot_mm = max(3.0, min(bot_mm, 6.0))
     left_mm = max(3.0, min(left_mm, 6.0))
     right_mm = max(3.0, min(right_mm, 6.0))
     margin_css = f"{top_mm}mm {right_mm}mm {bot_mm}mm {left_mm}mm"
+
+    total_page_w = 841.89 if orientation == "landscape" else 595.28
+    usable_w = total_page_w - ((left_mm + right_mm) / 25.4 * 72.0)
+    col_w_pts = [(w / (total_w or 1.0)) * usable_w for w in col_widths]
 
     page_css = "A4 landscape" if orientation == "landscape" else "A4 portrait"
 
@@ -831,17 +835,16 @@ def openpyxl_sheet_to_html(
         "<style>",
         f"  @page {{ size: {page_css}; margin: {margin_css}; }}",
         "  body { font-family: 'Times New Roman', Arial, sans-serif; margin: 0; padding: 0; background: white; line-height: 1.15; }",
-        "  table { border-collapse: collapse; table-layout: fixed; width: 100%; border-spacing: 0; }",
+        f"  table {{ border-collapse: collapse; table-layout: fixed; width: {usable_w:.2f}pt; border-spacing: 0; }}",
         "  td { box-sizing: border-box; overflow: hidden; word-break: break-word; }",
         "</style></head><body>",
-        "<table>",
-        "<colgroup>"
+        f'<table style="width: {usable_w:.2f}pt; table-layout: fixed; border-collapse: collapse;">',
+        '  <tr style="height: 0px; line-height: 0; font-size: 0;">'
     ]
 
-    for w in col_widths:
-        pct = (w / total_w) * 100.0
-        html_lines.append(f'  <col style="width: {pct:.2f}%;">')
-    html_lines.append("</colgroup>")
+    for cw in col_w_pts:
+        html_lines.append(f'    <td style="width: {cw:.2f}pt; min-width: {cw:.2f}pt; max-width: {cw:.2f}pt; height: 0; padding: 0; margin: 0; border: none;"></td>')
+    html_lines.append('  </tr>')
 
     def color_to_hex(c):
         if not c:
@@ -886,7 +889,10 @@ def openpyxl_sheet_to_html(
             if colspan > 1:
                 span_attrs += f' colspan="{colspan}"'
 
-            styles = []
+            cell_w = sum(col_w_pts[c - min_c : c - min_c + colspan])
+            cell_h = sum((ws.row_dimensions.get(r_i).height or 18.0) if ws.row_dimensions.get(r_i) else 18.0 for r_i in range(r, r + rowspan)) * scale_factor
+            styles = [f"width: {cell_w:.2f}pt;", f"max-width: {cell_w:.2f}pt;"]
+
             bg = color_to_hex(cell.fill.start_color) if cell.fill else None
             if bg and bg.lower() not in ("#000000", "#ffffff", "#00000000"):
                 styles.append(f"background-color: {bg};")
@@ -935,11 +941,19 @@ def openpyxl_sheet_to_html(
                 above = ws.cell(row=r-1, column=c)
                 if above.border and above.border.bottom and above.border.bottom.style:
                     b_top = border_side_css(above.border.bottom)
+            if b_bot == "none" and r < max_r:
+                below = ws.cell(row=r+1, column=c)
+                if below.border and below.border.top and below.border.top.style:
+                    b_bot = border_side_css(below.border.top)
 
             if b_left == "none" and c > min_c:
                 left_c = ws.cell(row=r, column=c-1)
                 if left_c.border and left_c.border.right and left_c.border.right.style:
                     b_left = border_side_css(left_c.border.right)
+            if b_right == "none" and c < max_c:
+                right_c = ws.cell(row=r, column=c+1)
+                if right_c.border and right_c.border.left and right_c.border.left.style:
+                    b_right = border_side_css(right_c.border.left)
 
             if b_top != "none": styles.append(f"border-top: {b_top};")
             if b_bot != "none": styles.append(f"border-bottom: {b_bot};")
@@ -953,7 +967,9 @@ def openpyxl_sheet_to_html(
             cell_content = ""
             if (r, c) in image_map:
                 mime, b64 = image_map[(r, c)]
-                cell_content += f'<img src="data:{mime};base64,{b64}" style="max-height: 90%; max-width: 95%; height: auto; width: auto; object-fit: contain; display: block; margin: auto;">'
+                max_img_h = max(15.0, cell_h * 0.90)
+                max_img_w = max(15.0, cell_w * 0.90)
+                cell_content += f'<img src="data:{mime};base64,{b64}" style="max-height: {max_img_h:.1f}pt; max-width: {max_img_w:.1f}pt; height: auto; width: auto; object-fit: contain; display: block; margin: auto;">'
 
             if val is not None:
                 if isinstance(val, (datetime.datetime, datetime.date)):
@@ -1028,7 +1044,7 @@ def export_sheet_via_pymupdf(
                 layout_w, layout_h = 842, 595
 
         # Tự động dò tìm tỉ lệ scale tối đa (ưu tiên lớn nhất) sao cho khớp đúng 1 trang duy nhất
-        scales_to_try = [0.85, 0.82, 0.80, 0.78, 0.76, 0.74, 0.72, 0.71, 0.70, 0.68, 0.65, 0.60, 0.55]
+        scales_to_try = [0.85, 0.82, 0.80, 0.78, 0.76, 0.74, 0.72, 0.70, 0.68, 0.66, 0.64, 0.62, 0.60, 0.58, 0.55, 0.52, 0.50, 0.45]
 
         best_pdf_bytes = None
         min_pages = 999
