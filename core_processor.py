@@ -1115,23 +1115,42 @@ def find_drawing_pdf(drawing_pdf_path: Optional[str], input_dir: str) -> Optiona
 
 
 def index_drawing_sheets(drawing_pdf_path: str) -> Dict[int, str]:
-    """Lập chỉ mục số Sheet của từng trang trong file bản vẽ PDF."""
-    ocr = get_ocr_engine()
+    """Lập chỉ mục số Sheet của từng trang trong file bản vẽ PDF an toàn trên mọi hệ điều hành."""
     doc = pymupdf.open(drawing_pdf_path)
     sheet_map = {}
+    ocr = get_ocr_engine() if (HAS_CV2 and HAS_RAPIDOCR) else None
     
     for pno in range(len(doc)):
         page = doc[pno]
-        clip = pymupdf.Rect(550, 480, 842, 595)
-        pix = page.get_pixmap(clip=clip, dpi=150)
-        img = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_COLOR)
-        res, _ = ocr(img)
+        found_sheet = False
         
-        txt = ' '.join([item[1] for item in res]) if res else ''
-        m = re.search(r'(\d{1,3})\s*/\s*(\d{1,3})', txt)
-        if m:
-            sheet_map[pno] = m.group(1)
-        else:
+        # Thử 1: Đọc text vector trước nếu có
+        try:
+            txt_vec = page.get_text()
+            if txt_vec:
+                m = re.search(r'(?:Sheet|Sheet\s*No\.?|Trang)\s*[:.]?\s*(\d{1,3})', txt_vec, re.IGNORECASE) or re.search(r'(\d{1,3})\s*/\s*(\d{1,3})', txt_vec)
+                if m:
+                    sheet_map[pno] = m.group(1)
+                    found_sheet = True
+        except Exception:
+            pass
+            
+        # Thử 2: OCR góc khung tên bản vẽ nếu có OCR engine & cv2
+        if not found_sheet and ocr is not None and cv2 is not None and np is not None:
+            try:
+                clip = pymupdf.Rect(550, 480, 842, 595)
+                pix = page.get_pixmap(clip=clip, dpi=150)
+                img = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_COLOR)
+                res, _ = ocr(img)
+                txt = ' '.join([item[1] for item in res]) if res else ''
+                m2 = re.search(r'(\d{1,3})\s*/\s*(\d{1,3})', txt)
+                if m2:
+                    sheet_map[pno] = m2.group(1)
+                    found_sheet = True
+            except Exception:
+                pass
+                
+        if not found_sheet:
             sheet_map[pno] = str(pno + 1)
             
     return sheet_map
@@ -1150,135 +1169,166 @@ def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet
         return 0
         
     # Thử 1: Tìm qua text vector
-    for pno in range(len(doc)):
-        txt_norm = normalize_code(doc[pno].get_text())
-        if any(j in txt_norm for j in norm_joints):
-            return pno
+    try:
+        for pno in range(len(doc)):
+            txt_norm = normalize_code(doc[pno].get_text())
+            if any(j in txt_norm for j in norm_joints):
+                return pno
+    except Exception:
+        pass
 
-    # Thử 2: Quét OCR nhanh các trang bản vẽ
-    ocr = get_ocr_engine()
-    best_pno = len(doc) - 1 # Mặc định trang cuối
-    best_count = 0
-    
-    for pno in range(len(doc)):
-        page = doc[pno]
-        pix = page.get_pixmap(dpi=150)
-        img = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_COLOR)
-        res, _ = ocr(img)
-        if res:
-            all_txt = normalize_code(' '.join([item[1] for item in res]))
-            matches = sum(1 for j in norm_joints if j in all_txt)
-            if matches > best_count:
-                best_count = matches
-                best_pno = pno
-                if matches == len(norm_joints):
-                    break # Khớp tất cả các mối
+    # Thử 2: Quét OCR nhanh các trang bản vẽ nếu có thư viện
+    if HAS_CV2 and HAS_RAPIDOCR and cv2 is not None and np is not None:
+        try:
+            ocr = get_ocr_engine()
+            if ocr is not None:
+                best_pno = len(doc) - 1 # Mặc định trang cuối
+                best_count = 0
+                
+                for pno in range(len(doc)):
+                    page = doc[pno]
+                    pix = page.get_pixmap(dpi=150)
+                    img = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_COLOR)
+                    res, _ = ocr(img)
+                    if res:
+                        all_txt = normalize_code(' '.join([item[1] for item in res]))
+                        matches = sum(1 for j in norm_joints if j in all_txt)
+                        if matches > best_count:
+                            best_count = matches
+                            best_pno = pno
+                            if matches == len(norm_joints):
+                                return pno
+                if best_count > 0:
+                    return best_pno
+        except Exception:
+            pass
                     
-    return best_pno
+    return 0
 
 
 def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 250) -> int:
     """
-    Tô màu số hiệu mối hàn trên bản vẽ với công nghệ Ink Bounding chính xác 100%,
-    tuyệt đối KHÔNG lem sang các dòng chữ lân cận hoặc chi tiết khác.
+    Tô màu số hiệu mối hàn trên bản vẽ.
+    - Ưu tiên công nghệ Ink Bounding chính xác 100% nếu có cv2 và OCR.
+    - Tự động fallback sang PyMuPDF vector search nếu không có cv2/OCR.
     """
-    ocr = get_ocr_engine()
-    scale = dpi / 72.0
-    pix = page.get_pixmap(dpi=dpi)
-    img_gray = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_GRAYSCALE)
-    _, thresh = cv2.threshold(img_gray, 180, 255, cv2.THRESH_BINARY_INV)
-    res, _ = ocr(img_gray)
-    
-    if not res:
+    if not joints:
         return 0
         
     count = 0
-    norm_joints = {normalize_code(j): j for j in joints}
-    
-    rot = page.rotation
-    mb_w = page.mediabox.width
-    mb_h = page.mediabox.height
-    
-    for item in res:
-        txt = item[1]
-        norm_txt = normalize_code(txt)
-        box = item[0]
-        
-        for nj, orig_j in norm_joints.items():
-            if nj in norm_txt:
-                pts_x = [pt[0] for pt in box]
-                pts_y = [pt[1] for pt in box]
-                px0, px1 = int(min(pts_x)), int(max(pts_x))
-                py0, py1 = int(min(pts_y)), int(max(pts_y))
-                
-                px0 = max(0, px0 - 2)
-                px1 = min(img_gray.shape[1], px1 + 2)
-                py0 = max(0, py0 - 2)
-                py1 = min(img_gray.shape[0], py1 + 2)
-                
-                crop = thresh[py0:py1, px0:px1]
-                
-                # Chiếu dòng để xác định chính xác chiều cao thân chữ
-                row_sums = np.sum(crop > 0, axis=1)
-                ink_rows = np.where(row_sums > 3)[0]
-                if len(ink_rows) > 0:
-                    ink_py0 = py0 + np.min(ink_rows)
-                    ink_py1 = py0 + np.max(ink_rows)
-                else:
-                    ink_py0, ink_py1 = py0, py1
-                    
-                # Chiếu cột để xác định chính xác chiều dài thân chữ
-                crop_line = thresh[ink_py0:ink_py1+1, px0:px1]
-                col_sums = np.sum(crop_line > 0, axis=0)
-                ink_cols = np.where(col_sums > 0)[0]
-                if len(ink_cols) > 0:
-                    ink_px0 = px0 + np.min(ink_cols)
-                    ink_px1 = px0 + np.max(ink_cols)
-                else:
-                    ink_px0, ink_px1 = px0, px1
-                
-                # Lề siêu nhỏ 0.2 pt ôm sát thân chữ
-                margin_pt = 0.2
-                vx0 = ink_px0 / scale - margin_pt
-                vx1 = ink_px1 / scale + margin_pt
-                vy0 = ink_py0 / scale - margin_pt
-                vy1 = ink_py1 / scale + margin_pt
-                
-                if rot == 90:
-                    ux0 = vy0
-                    ux1 = vy1
-                    uy0 = mb_h - vx1
-                    uy1 = mb_h - vx0
-                elif rot == 270:
-                    ux0 = mb_w - vy1
-                    ux1 = mb_w - vy0
-                    uy0 = vx0
-                    uy1 = vx1
-                elif rot == 180:
-                    ux0 = mb_w - vx1
-                    ux1 = mb_w - vx0
-                    uy0 = mb_h - vy1
-                    uy1 = mb_h - vy0
-                else:
-                    ux0 = vx0
-                    ux1 = vx1
-                    uy0 = vy0
-                    uy1 = vy1
-                    
-                unrot_rect = pymupdf.Rect(ux0, uy0, ux1, uy1)
-                
-                # Tô màu highlight sắc nét, ôm sát viền chữ, tuyệt đối không lem
-                page.draw_rect(
-                    unrot_rect,
-                    fill=(1.0, 0.92, 0.0),
-                    fill_opacity=0.45,
-                    color=None,
-                    overlay=True
-                )
-                
+    # Thử 1: Tìm và highlight text vector (nếu có sẵn trong PDF)
+    try:
+        for j in joints:
+            if not j or not str(j).strip():
+                continue
+            rects = page.search_for(str(j).strip())
+            for r in rects:
+                annot = page.add_highlight_annot(r)
+                annot.set_colors(stroke=(1.0, 1.0, 0.0))
+                annot.update()
                 count += 1
-                break
+    except Exception:
+        pass
+
+    # Thử 2: Nếu có cv2 và RapidOCR -> Nhận diện pixel ôm sát thân chữ
+    if HAS_CV2 and HAS_RAPIDOCR and cv2 is not None and np is not None:
+        try:
+            ocr = get_ocr_engine()
+            if ocr is not None:
+                scale = dpi / 72.0
+                pix = page.get_pixmap(dpi=dpi)
+                img_gray = cv2.imdecode(np.frombuffer(pix.tobytes('png'), np.uint8), cv2.IMREAD_GRAYSCALE)
+                _, thresh = cv2.threshold(img_gray, 180, 255, cv2.THRESH_BINARY_INV)
+                res, _ = ocr(img_gray)
                 
+                if res:
+                    norm_joints = {normalize_code(j): j for j in joints}
+                    rot = page.rotation
+                    mb_w = page.mediabox.width
+                    mb_h = page.mediabox.height
+                    
+                    for item in res:
+                        txt = item[1]
+                        norm_txt = normalize_code(txt)
+                        box = item[0]
+                        
+                        for nj, orig_j in norm_joints.items():
+                            if nj in norm_txt:
+                                pts_x = [pt[0] for pt in box]
+                                pts_y = [pt[1] for pt in box]
+                                px0, px1 = int(min(pts_x)), int(max(pts_x))
+                                py0, py1 = int(min(pts_y)), int(max(pts_y))
+                                
+                                px0 = max(0, px0 - 2)
+                                px1 = min(img_gray.shape[1], px1 + 2)
+                                py0 = max(0, py0 - 2)
+                                py1 = min(img_gray.shape[0], py1 + 2)
+                                
+                                crop = thresh[py0:py1, px0:px1]
+                                
+                                # Chiếu dòng để xác định chính xác chiều cao thân chữ
+                                row_sums = np.sum(crop > 0, axis=1)
+                                ink_rows = np.where(row_sums > 3)[0]
+                                if len(ink_rows) > 0:
+                                    ink_py0 = py0 + np.min(ink_rows)
+                                    ink_py1 = py0 + np.max(ink_rows)
+                                else:
+                                    ink_py0, ink_py1 = py0, py1
+                                    
+                                # Chiếu cột để xác định chính xác chiều dài thân chữ
+                                crop_line = thresh[ink_py0:ink_py1+1, px0:px1]
+                                col_sums = np.sum(crop_line > 0, axis=0)
+                                ink_cols = np.where(col_sums > 0)[0]
+                                if len(ink_cols) > 0:
+                                    ink_px0 = px0 + np.min(ink_cols)
+                                    ink_px1 = px0 + np.max(ink_cols)
+                                else:
+                                    ink_px0, ink_px1 = px0, px1
+                                
+                                # Lề siêu nhỏ 0.2 pt ôm sát thân chữ
+                                margin_pt = 0.2
+                                vx0 = ink_px0 / scale - margin_pt
+                                vx1 = ink_px1 / scale + margin_pt
+                                vy0 = ink_py0 / scale - margin_pt
+                                vy1 = ink_py1 / scale + margin_pt
+                                
+                                if rot == 90:
+                                    ux0 = vy0
+                                    ux1 = vy1
+                                    uy0 = mb_h - vx1
+                                    uy1 = mb_h - vx0
+                                elif rot == 270:
+                                    ux0 = mb_w - vy1
+                                    ux1 = mb_w - vy0
+                                    uy0 = vx0
+                                    uy1 = vx1
+                                elif rot == 180:
+                                    ux0 = mb_w - vx1
+                                    ux1 = mb_w - vx0
+                                    uy0 = mb_h - vy1
+                                    uy1 = mb_h - vy0
+                                else:
+                                    ux0 = vx0
+                                    ux1 = vx1
+                                    uy0 = vy0
+                                    uy1 = vy1
+                                    
+                                unrot_rect = pymupdf.Rect(ux0, uy0, ux1, uy1)
+                                
+                                # Tô màu highlight sắc nét, ôm sát viền chữ, tuyệt đối không lem
+                                page.draw_rect(
+                                    unrot_rect,
+                                    fill=(1.0, 0.92, 0.0),
+                                    fill_opacity=0.45,
+                                    color=None,
+                                    overlay=True
+                                )
+                                
+                                count += 1
+                                break
+        except Exception:
+            pass
+
     return count
 
 
