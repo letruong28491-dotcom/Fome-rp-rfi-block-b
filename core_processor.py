@@ -657,6 +657,22 @@ def safe_open_workbook(excel_app, file_path: str, read_only: bool = True, target
     return wb, None
 
 
+def get_column_width(ws, col_idx: int) -> float:
+    """Lấy độ rộng cột chuẩn xác từ openpyxl kể cả khi cột nằm trong dải nhóm min..max."""
+    let = get_column_letter(col_idx)
+    dim = ws.column_dimensions.get(let)
+    if dim and dim.width:
+        return float(dim.width)
+    for k, d in ws.column_dimensions.items():
+        c_min = getattr(d, 'min', None)
+        c_max = getattr(d, 'max', None)
+        if c_min is not None and c_max is not None and c_min <= col_idx <= c_max and d.width:
+            return float(d.width)
+    if ws.sheet_format and ws.sheet_format.defaultColWidth:
+        return float(ws.sheet_format.defaultColWidth)
+    return 10.0
+
+
 def openpyxl_sheet_to_html(
     ws,
     orientation: str = "landscape",
@@ -666,90 +682,118 @@ def openpyxl_sheet_to_html(
 ) -> str:
     """
     Chuyển đổi một worksheet của openpyxl sang mã HTML hoàn chỉnh với CSS in ấn A4 chuẩn xác.
-    Hỗ trợ đầy đủ: gộp ô, màu nền, đường viền, kích cỡ font, căn lề, hình ảnh logo nhúng (base64).
+    Đảm bảo khớp 100% tỷ lệ form mẫu gốc:
+    - Parse chính xác PrintArea từ Excel để không bị dư thừa ô/cột trống.
+    - Lấy đúng kích thước cột (bao gồm các cột giờ 1-24 bị gom nhóm).
+    - Nhúng logo đúng tỷ lệ gốc và định dạng ảnh (JPEG/PNG) không bị méo hay thu nhỏ.
+    - Giữ toàn vẹn viền bảng (border), font, căn lề và khung ký tên.
     """
-    max_r = ws.max_row or 1
-    max_c = ws.max_column or 1
+    # 1. Bounding box từ PrintArea hoặc dữ liệu thực tế
+    min_r, max_r, min_c, max_c = 1, ws.max_row or 1, 1, ws.max_column or 1
+    if ws.print_area:
+        pa_clean = ws.print_area.split('!')[-1].replace('$', '')
+        m = re.match(r'([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)', pa_clean)
+        if m:
+            c1_str, r1_str, c2_str, r2_str = m.groups()
+            min_c = openpyxl.utils.column_index_from_string(c1_str)
+            max_c = openpyxl.utils.column_index_from_string(c2_str)
+            min_r = int(r1_str)
+            max_r = int(r2_str)
+    else:
+        actual_max_r, actual_max_c = 1, 1
+        for r in range(1, min(max_r + 1, 1000)):
+            for c in range(1, min(max_c + 1, 100)):
+                cell = ws.cell(row=r, column=c)
+                has_val = cell.value is not None
+                has_border = bool(cell.border and (
+                    (cell.border.bottom and cell.border.bottom.style) or 
+                    (cell.border.top and cell.border.top.style) or 
+                    (cell.border.left and cell.border.left.style) or 
+                    (cell.border.right and cell.border.right.style)
+                ))
+                has_fill = bool(cell.fill and cell.fill.start_color and 
+                                str(cell.fill.start_color.value or '') not in ('00000000', 'FFFFFFFF', '0', ''))
+                if has_val or has_border or has_fill:
+                    actual_max_r = max(actual_max_r, r)
+                    actual_max_c = max(actual_max_c, c)
+        max_r = max(actual_max_r, 1)
+        max_c = max(actual_max_c, 1)
 
-    actual_max_r = 1
-    actual_max_c = 1
-    for r in range(1, min(max_r + 1, 1000)):
-        for c in range(1, min(max_c + 1, 100)):
-            cell = ws.cell(row=r, column=c)
-            has_val = cell.value is not None
-            has_border = False
-            if cell.border:
-                has_border = bool((cell.border.bottom and cell.border.bottom.style) or 
-                                  (cell.border.top and cell.border.top.style) or 
-                                  (cell.border.left and cell.border.left.style) or 
-                                  (cell.border.right and cell.border.right.style))
-            has_fill = False
-            if cell.fill and cell.fill.start_color and cell.fill.start_color.value:
-                fill_v = str(cell.fill.start_color.value)
-                has_fill = fill_v not in ("00000000", "FFFFFFFF", "0")
-            if has_val or has_border or has_fill:
-                if r > actual_max_r:
-                    actual_max_r = r
-                if c > actual_max_c:
-                    actual_max_c = c
-    max_r = max(actual_max_r, 1)
-    max_c = max(actual_max_c, 1)
-
+    # 2. Merged cells mapping
     merged_map = {}
     skip_cells = set()
     for rng in ws.merged_cells.ranges:
-        min_col, min_row, max_col, max_row = rng.min_col, rng.min_row, rng.max_col, rng.max_row
-        rowspan = max_row - min_row + 1
-        colspan = max_col - min_col + 1
-        merged_map[(min_row, min_col)] = (rowspan, colspan)
-        for r in range(min_row, max_row + 1):
-            for c in range(min_col, max_col + 1):
-                if (r, c) != (min_row, min_col):
-                    skip_cells.add((r, c))
+        r1, r2 = max(rng.min_row, min_r), min(rng.max_row, max_r)
+        c1, c2 = max(rng.min_col, min_c), min(rng.max_col, max_c)
+        if r1 <= r2 and c1 <= c2:
+            rowspan = r2 - r1 + 1
+            colspan = c2 - c1 + 1
+            merged_map[(r1, c1)] = (rowspan, colspan)
+            for r in range(r1, r2 + 1):
+                for c in range(c1, c2 + 1):
+                    if (r, c) != (r1, c1):
+                        skip_cells.add((r, c))
 
+    # 3. Logo & Images mapping (có cache bytes để tránh lỗi I/O closed file khi thử nhiều scale)
     image_map = {}
     if hasattr(ws, '_images'):
         for img in ws._images:
             try:
                 anc = getattr(img, 'anchor', None)
-                if anc and hasattr(anc, '_from'):
+                img_r, img_c = None, None
+                if hasattr(anc, '_from'):
                     img_r = anc._from.row + 1
                     img_c = anc._from.col + 1
-                    raw_bytes = img._data()
+                elif hasattr(anc, 'from'):
+                    img_r = getattr(anc, 'from').row + 1
+                    img_c = getattr(anc, 'from').col + 1
+                if img_r and img_c:
+                    if not hasattr(img, '_cached_raw_bytes'):
+                        try:
+                            img._cached_raw_bytes = img._data()
+                        except Exception:
+                            img._cached_raw_bytes = None
+                    raw_bytes = getattr(img, '_cached_raw_bytes', None)
                     if raw_bytes:
                         b64_str = base64.b64encode(raw_bytes).decode('ascii')
-                        image_map[(img_r, img_c)] = b64_str
+                        fmt = getattr(img, 'format', 'png') or 'png'
+                        mime = 'image/jpeg' if fmt.lower() in ('jpg', 'jpeg') else 'image/png'
+                        image_map[(img_r, img_c)] = (mime, b64_str)
             except Exception:
                 pass
 
+    # 4. Column widths
     col_widths = []
     total_w = 0.0
-    for col_idx in range(1, max_c + 1):
-        col_letter = get_column_letter(col_idx)
-        dim = ws.column_dimensions.get(col_letter)
-        w = dim.width if (dim and dim.width) else 10.0
-        w = max(float(w), 2.0)
+    for c in range(min_c, max_c + 1):
+        w = get_column_width(ws, c)
         col_widths.append(w)
         total_w += w
 
+    # 5. Scale factor calculation
     if custom_scale is not None:
         scale_factor = custom_scale
     else:
-        total_row_height = sum(ws.row_dimensions[r].height or 18.0 for r in range(1, max_r + 1))
-        scale_factor = 1.0
-        if fit_to_one_page or is_rfi:
-            if total_row_height > 460.0:
-                scale_factor = min(1.0, 460.0 / total_row_height)
-                if scale_factor < 0.68:
-                    scale_factor = 0.68
-        elif orientation == "portrait" and fit_to_one_page:
-            if total_row_height > 720.0:
-                scale_factor = min(1.0, 720.0 / total_row_height)
-                if scale_factor < 0.68:
-                    scale_factor = 0.68
+        total_row_height = sum(ws.row_dimensions[r].height or (ws.sheet_format.defaultRowHeight or 18.0) for r in range(min_r, max_r + 1))
+        usable_h = 540.0 if orientation == "landscape" else 760.0
+        if total_row_height > usable_h:
+            scale_factor = max(0.60, min(1.0, usable_h / total_row_height))
+        else:
+            scale_factor = 1.0
+
+    # 6. Page setup margins
+    pm = ws.page_margins
+    top_mm = round((pm.top or 0.3) * 25.4, 1) if pm else 5.0
+    bot_mm = round((pm.bottom or 0.25) * 25.4, 1) if pm else 5.0
+    left_mm = round((pm.left or 0.25) * 25.4, 1) if pm else 5.0
+    right_mm = round((pm.right or 0.2) * 25.4, 1) if pm else 5.0
+    top_mm = max(3.0, min(top_mm, 6.0))
+    bot_mm = max(3.0, min(bot_mm, 6.0))
+    left_mm = max(3.0, min(left_mm, 6.0))
+    right_mm = max(3.0, min(right_mm, 6.0))
+    margin_css = f"{top_mm}mm {right_mm}mm {bot_mm}mm {left_mm}mm"
 
     page_css = "A4 landscape" if orientation == "landscape" else "A4 portrait"
-    margin_css = "4mm" if (fit_to_one_page or is_rfi) else "8mm"
 
     html_lines = [
         "<!DOCTYPE html>",
@@ -794,12 +838,13 @@ def openpyxl_sheet_to_html(
         col = color_to_hex(b.color) or "#000000"
         return f"{w} solid {col}"
 
-    for r in range(1, max_r + 1):
+    for r in range(min_r, max_r + 1):
         row_dim = ws.row_dimensions.get(r)
-        r_height = f"height: {row_dim.height * scale_factor:.1f}pt;" if (row_dim and row_dim.height) else ""
+        h_val = row_dim.height if (row_dim and row_dim.height) else (ws.sheet_format.defaultRowHeight or 18.0)
+        r_height = f'height: {h_val * scale_factor:.1f}pt;'
         html_lines.append(f'<tr style="{r_height}">')
 
-        for c in range(1, max_c + 1):
+        for c in range(min_c, max_c + 1):
             if (r, c) in skip_cells:
                 continue
             cell = ws.cell(row=r, column=c)
@@ -856,12 +901,12 @@ def openpyxl_sheet_to_html(
             b_left = border_side_css(cell.border.left) if cell.border else "none"
             b_right = border_side_css(cell.border.right) if cell.border else "none"
 
-            if b_top == "none" and r > 1:
+            if b_top == "none" and r > min_r:
                 above = ws.cell(row=r-1, column=c)
                 if above.border and above.border.bottom and above.border.bottom.style:
                     b_top = border_side_css(above.border.bottom)
 
-            if b_left == "none" and c > 1:
+            if b_left == "none" and c > min_c:
                 left_c = ws.cell(row=r, column=c-1)
                 if left_c.border and left_c.border.right and left_c.border.right.style:
                     b_left = border_side_css(left_c.border.right)
@@ -871,14 +916,14 @@ def openpyxl_sheet_to_html(
             if b_left != "none": styles.append(f"border-left: {b_left};")
             if b_right != "none": styles.append(f"border-right: {b_right};")
 
-            pad = "1px 2px" if (fit_to_one_page or is_rfi) else "2px 3px"
+            pad = "1px 2px"
             styles.append(f"padding: {pad};")
 
             val = cell.value
             cell_content = ""
             if (r, c) in image_map:
-                b64 = image_map[(r, c)]
-                cell_content += f'<img src="data:image/png;base64,{b64}" style="height: 25pt; max-width: 100%; object-fit: contain; display: block; margin: auto;">'
+                mime, b64 = image_map[(r, c)]
+                cell_content += f'<img src="data:{mime};base64,{b64}" style="max-height: 90%; max-width: 95%; height: auto; width: auto; object-fit: contain; display: block; margin: auto;">'
 
             if val is not None:
                 if isinstance(val, (datetime.datetime, datetime.date)):
@@ -910,6 +955,7 @@ def export_sheet_via_pymupdf(
 ) -> None:
     """
     Xuất 1 sheet trong Excel sang PDF thuần Python (Pure Python via openpyxl & PyMuPDF).
+    Tự động co giãn theo tỷ lệ tối ưu cao nhất để khớp 100% form chuẩn Excel đầu vào và vừa đúng 1 trang A4.
     Không yêu cầu Microsoft Office hay win32com, chạy mượt mà trên Render Linux, macOS và mọi hệ điều hành.
     """
     wb = openpyxl.load_workbook(file_path, data_only=True)
@@ -951,55 +997,35 @@ def export_sheet_via_pymupdf(
                 ori_str = "landscape"
                 layout_w, layout_h = 842, 595
 
-        fit_to_one = detected_rfi or is_cover
+        # Tự động dò tìm tỉ lệ scale tối đa (ưu tiên lớn nhất) sao cho khớp đúng 1 trang duy nhất
+        scales_to_try = [0.85, 0.82, 0.80, 0.78, 0.76, 0.74, 0.72, 0.71, 0.70, 0.68, 0.65, 0.60, 0.55]
 
-        # Tự động căn chỉnh scale để vừa vặn đúng số trang tối ưu:
-        # - Với RFI và Trang bìa: bắt buộc phải vừa đúng 1 trang!
-        # - Với RP: thử co giãn nhẹ để vừa khít đúng 1 trang nếu có thể, tránh tràn chữ ký sang trang 2.
-        if fit_to_one:
-            scales_to_try = [0.72, 0.68, 0.65, 0.62, 0.60, 0.55]
-        else:
-            scales_to_try = [1.0, 0.85, 0.75, 0.68, 0.65, 0.62, 0.58]
-
-        selected_pdf_bytes = None
         best_pdf_bytes = None
         min_pages = 999
 
         for sc in scales_to_try:
-            html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, fit_to_one_page=fit_to_one, custom_scale=sc)
-            with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as tf:
-                tf.write(html_content)
-                temp_html = tf.name
+            html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, custom_scale=sc)
+            doc = pymupdf.open("html", html_content.encode("utf-8"))
+            doc.layout(width=layout_w, height=layout_h)
+            pdf_bytes = doc.convert_to_pdf()
+            doc.close()
 
-            try:
-                doc = pymupdf.open(temp_html)
-                doc.layout(width=layout_w, height=layout_h)
-                pdf_bytes = doc.convert_to_pdf()
-                pdf_doc = pymupdf.open("pdf", pdf_bytes)
-                page_count = len(pdf_doc)
-                pdf_doc.close()
-                doc.close()
-
-                if page_count < min_pages:
-                    min_pages = page_count
-                    best_pdf_bytes = pdf_bytes
-
-                if page_count == 1:
-                    break
-            finally:
-                if os.path.exists(temp_html):
-                    try:
-                        os.remove(temp_html)
-                    except Exception:
-                        pass
-
-        selected_pdf_bytes = best_pdf_bytes
-
-        if selected_pdf_bytes:
-            pdf_doc = pymupdf.open("pdf", selected_pdf_bytes)
-            os.makedirs(os.path.dirname(os.path.abspath(output_pdf)), exist_ok=True)
-            pdf_doc.save(os.path.abspath(output_pdf))
+            pdf_doc = pymupdf.open("pdf", pdf_bytes)
+            page_count = len(pdf_doc)
             pdf_doc.close()
+
+            if page_count < min_pages:
+                min_pages = page_count
+                best_pdf_bytes = pdf_bytes
+
+            if page_count == 1:
+                best_pdf_bytes = pdf_bytes
+                break
+
+        if best_pdf_bytes:
+            os.makedirs(os.path.dirname(os.path.abspath(output_pdf)), exist_ok=True)
+            with open(os.path.abspath(output_pdf), "wb") as f_out:
+                f_out.write(best_pdf_bytes)
     finally:
         wb.close()
 
