@@ -581,7 +581,7 @@ def find_libreoffice_binary() -> Optional[str]:
 
 
 def export_excel_sheet_via_libreoffice(file_path: str, output_pdf: str) -> bool:
-    """Chuyển đổi file Excel sang PDF bằng LibreOffice Calc headless (chuẩn xác 100% trên Linux/Render)."""
+    """Chuyển đổi file Excel sang PDF bằng LibreOffice Calc headless (fallback nếu cần)."""
     lo_bin = find_libreoffice_binary()
     if not lo_bin:
         return False
@@ -591,8 +591,10 @@ def export_excel_sheet_via_libreoffice(file_path: str, output_pdf: str) -> bool:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_lo:
         env = os.environ.copy()
         env['SAL_USE_VCLPLUGIN'] = 'gen'
+        prof_dir = os.path.join(tmp_lo, 'lo_profile').replace('\\', '/')
         cmd = [
             lo_bin,
+            f'-env:UserInstallation=file:///{prof_dir}',
             '--headless',
             '--convert-to',
             'pdf:calc_pdf_Export',
@@ -602,7 +604,7 @@ def export_excel_sheet_via_libreoffice(file_path: str, output_pdf: str) -> bool:
         ]
         try:
             import subprocess
-            subprocess.run(cmd, env=env, capture_output=True, timeout=45)
+            subprocess.run(cmd, env=env, capture_output=True, timeout=10)
             base_pdf = os.path.splitext(os.path.basename(abs_excel))[0] + '.pdf'
             generated_pdf = os.path.join(tmp_lo, base_pdf)
             if os.path.isfile(generated_pdf) and os.path.getsize(generated_pdf) > 0:
@@ -1150,14 +1152,18 @@ def export_excel_sheet_to_pdf(
                 except Exception:
                     pass
 
-    lo_success = False
+    try:
+        export_sheet_via_pymupdf(file_path, sheet_name, output_pdf, orientation=orientation, is_rfi=is_rfi)
+        if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
+            return
+    except Exception:
+        pass
+
     if find_libreoffice_binary():
         try:
-            lo_success = export_excel_sheet_via_libreoffice(file_path, output_pdf)
+            export_excel_sheet_via_libreoffice(file_path, output_pdf)
         except Exception:
-            lo_success = False
-    if not lo_success:
-        export_sheet_via_pymupdf(file_path, sheet_name, output_pdf, orientation=orientation, is_rfi=is_rfi)
+            pass
 
 
 def find_drawing_pdf(drawing_pdf_path: Optional[str], input_dir: str) -> Optional[str]:
@@ -1690,14 +1696,18 @@ def create_reconciliation_cover(
                 except Exception:
                     pass
 
-    lo_success = False
+    try:
+        export_sheet_via_pymupdf(output_xlsx, 'Bang_Doi_Chieu', output_pdf, orientation=2, is_rfi=False)
+        if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
+            return
+    except Exception:
+        pass
+
     if find_libreoffice_binary():
         try:
-            lo_success = export_excel_sheet_via_libreoffice(output_xlsx, output_pdf)
+            export_excel_sheet_via_libreoffice(output_xlsx, output_pdf)
         except Exception:
-            lo_success = False
-    if not lo_success:
-        export_sheet_via_pymupdf(output_xlsx, 'Bang_Doi_Chieu', output_pdf, orientation=2, is_rfi=False)
+            pass
 
 
 def build_reconcile_list(input_dir: str) -> List[Dict]:
