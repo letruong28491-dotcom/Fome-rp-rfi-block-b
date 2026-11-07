@@ -31231,7 +31231,7 @@ def format_standard_rp_header(
 
 
 
-        "VSR": {"date_lbl": (3, 13), "date_val": (3, 14), "rep_lbl": (4, 13), "rep_val": (5, 13), "page_lbl": (6, 13)},
+        "VSR": {"date_lbl": (3, 14), "date_val": (3, 16), "rep_lbl": (4, 14), "rep_val": (5, 14), "page_lbl": (6, 14)},
 
 
 
@@ -42469,7 +42469,7 @@ def generate_rp_workbook(
 
 
 
-        date_coords = {"FUR": "N3", "VSR": "N3", "DIC": "R3", "MTR": "L3"}
+        date_coords = {"FUR": "O3", "VSR": "P3", "DIC": "R3", "MTR": "L3"}
 
 
 
@@ -42549,7 +42549,7 @@ def generate_rp_workbook(
 
 
 
-        rep_coords = {"FUR": "M5", "VSR": "M5", "DIC": "O5", "MTR": "K5"}
+        rep_coords = {"FUR": "O5", "VSR": "N5", "DIC": "O5", "MTR": "K5"}
 
 
 

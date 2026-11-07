@@ -6,6 +6,7 @@ Dự án: ĐƯỜNG ỐNG DẪN KHÍ LÔ B - Ô MÔN (BLOCK B - O MON GAS PIPELI
 import os
 import re
 import sys
+import json
 import shutil
 import tempfile
 import datetime
@@ -142,7 +143,7 @@ def parse_rp_excel(file_path: str) -> Dict:
                     v_next = ws.cell(r + 1, c).value
                     if v_next and str(v_next).strip():
                         report_no = str(v_next).strip()
-            elif sval.startswith('SWG-') and 'RFI' not in sval and ('MRIR' not in sval or is_mrir) and 'WPS' not in sval and 'WMP' not in sval and 'DAG' not in sval:
+            elif sval.startswith('SWG-') and 'RFI' not in sval and ('MRIR' not in sval or is_mrir) and 'WPS' not in sval and 'WMP' not in sval and 'DAG' not in sval and '\n' not in sval and re.search(r'[A-Za-z]{2,4}-\d+', sval):
                 if not report_no or not report_no.startswith('SWG-'):
                     report_no = sval
 
@@ -173,6 +174,13 @@ def parse_rp_excel(file_path: str) -> Dict:
                             break
             elif ('SHT ' in sval or 'SHEET ' in sval) and not weld_map_no:
                 weld_map_no = sval
+
+    # Bổ sung: Nếu chưa trích xuất được report_no hoặc report_no không chuẩn (chứa xuống dòng, sai format):
+    if not report_no or '\n' in report_no or not re.search(r'[A-Za-z]{2,4}-\d+', report_no):
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        m_base = re.search(r'(SWG-[A-Za-z0-9\-]+)', base_name)
+        if m_base:
+            report_no = m_base.group(1)
 
     # Trích xuất danh sách số mối hàn (Joint No) hoặc danh sách số ống (Pipe No) hoặc vật tư (MRIR):
     if is_icr:
@@ -543,17 +551,66 @@ def find_matching_rfi(rp_info: Dict, input_dir: str) -> Optional[Tuple[str, str]
 
 
 def cleanup_headless_excel():
-    """Dọn dẹp các tiến trình Excel chạy ngầm không có cửa sổ để tránh nghẽn COM hoặc khóa file."""
+    """Dọn dẹp các tiến trình Excel chạy ngầm bị treo để tránh nghẽn COM hoặc khóa file."""
+    if sys.platform != 'win32':
+        return
     try:
         import subprocess
         subprocess.run(
-            ['powershell', '-NoProfile', '-Command', 
-             'Get-Process excel -EA SilentlyContinue | Where-Object { $_.MainWindowHandle -eq 0 } | Stop-Process -Force -EA SilentlyContinue'],
+            ['taskkill', '/F', '/IM', 'excel.exe', '/FI', 'STATUS eq NOT RESPONDING'],
             capture_output=True,
-            timeout=5
+            timeout=2
         )
     except Exception:
         pass
+
+
+def find_libreoffice_binary() -> Optional[str]:
+    """Tìm đường dẫn thực thi của LibreOffice hoặc soffice trên hệ điều hành."""
+    candidates = [
+        'libreoffice', 'soffice',
+        '/usr/bin/libreoffice', '/usr/bin/soffice',
+        '/usr/local/bin/libreoffice', '/usr/local/bin/soffice',
+        r'C:\Program Files\LibreOffice\program\soffice.exe',
+        r'C:\Program Files (x86)\LibreOffice\program\soffice.exe'
+    ]
+    for c in candidates:
+        if shutil.which(c) or (os.path.isfile(c) and (sys.platform == 'win32' or os.access(c, os.X_OK))):
+            return c
+    return None
+
+
+def export_excel_sheet_via_libreoffice(file_path: str, output_pdf: str) -> bool:
+    """Chuyển đổi file Excel sang PDF bằng LibreOffice Calc headless (chuẩn xác 100% trên Linux/Render)."""
+    lo_bin = find_libreoffice_binary()
+    if not lo_bin:
+        return False
+    abs_excel = os.path.abspath(file_path)
+    abs_out_pdf = os.path.abspath(output_pdf)
+    os.makedirs(os.path.dirname(abs_out_pdf), exist_ok=True)
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_lo:
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'gen'
+        cmd = [
+            lo_bin,
+            '--headless',
+            '--convert-to',
+            'pdf:calc_pdf_Export',
+            '--outdir',
+            tmp_lo,
+            abs_excel
+        ]
+        try:
+            import subprocess
+            subprocess.run(cmd, env=env, capture_output=True, timeout=45)
+            base_pdf = os.path.splitext(os.path.basename(abs_excel))[0] + '.pdf'
+            generated_pdf = os.path.join(tmp_lo, base_pdf)
+            if os.path.isfile(generated_pdf) and os.path.getsize(generated_pdf) > 0:
+                shutil.copyfile(generated_pdf, abs_out_pdf)
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def sanitize_and_repair_workbook(file_path: str, target_sheet: Optional[str] = None) -> str:
@@ -707,9 +764,11 @@ def export_excel_sheet_to_pdf(
       + Riêng RP-DIC: Điều chỉnh vùng in loại bỏ cột S rỗng 0.45pt để bảo toàn đường viền mép phải ô cuối.
     """
     if excel_app is None:
+        if export_excel_sheet_via_libreoffice(file_path, output_pdf):
+            return
         raise RuntimeError(
-            "Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) yêu cầu máy tính chạy có cài đặt Microsoft Office Excel. "
-            "Vui lòng truy cập qua máy chủ nội bộ hoặc đường dẫn Cloudflare Tunnel được phát từ máy tính có Office."
+            "Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) yêu cầu máy tính chạy có cài đặt Microsoft Office Excel "
+            "hoặc máy chủ có cài đặt LibreOffice Calc."
         )
 
     wb, temp_repaired = safe_open_workbook(excel_app, file_path, read_only=True, target_sheet=sheet_name)
@@ -1294,26 +1353,30 @@ def create_reconciliation_cover(
 
     wb.save(output_xlsx)
 
-    # Export to PDF via Microsoft Office Excel COM nguyên bản
-    wb_com, temp_cover = safe_open_workbook(excel_app, output_xlsx, read_only=True, target_sheet='Bang_Doi_Chieu')
-    try:
-        ws_com = wb_com.Sheets('Bang_Doi_Chieu')
-        ws_com.PageSetup.PaperSize = 9 # xlPaperA4
-        ws_com.PageSetup.Orientation = 2 # xlLandscape
-        ws_com.PageSetup.Zoom = False
-        ws_com.PageSetup.FitToPagesWide = 1
-        ws_com.PageSetup.FitToPagesTall = 1
-        ws_com.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
-    finally:
+    # Export to PDF via Microsoft Office Excel COM nguyên bản (hoặc LibreOffice Calc nếu không có COM)
+    if excel_app is not None:
+        wb_com, temp_cover = safe_open_workbook(excel_app, output_xlsx, read_only=True, target_sheet='Bang_Doi_Chieu')
         try:
-            wb_com.Close(False)
-        except Exception:
-            pass
-        if temp_cover and os.path.exists(temp_cover):
+            ws_com = wb_com.Sheets('Bang_Doi_Chieu')
+            ws_com.PageSetup.PaperSize = 9 # xlPaperA4
+            ws_com.PageSetup.Orientation = 2 # xlLandscape
+            ws_com.PageSetup.Zoom = False
+            ws_com.PageSetup.FitToPagesWide = 1
+            ws_com.PageSetup.FitToPagesTall = 1
+            ws_com.ExportAsFixedFormat(0, os.path.abspath(output_pdf))
+        finally:
             try:
-                os.remove(temp_cover)
+                wb_com.Close(False)
             except Exception:
                 pass
+            if temp_cover and os.path.exists(temp_cover):
+                try:
+                    os.remove(temp_cover)
+                except Exception:
+                    pass
+    else:
+        if not export_excel_sheet_via_libreoffice(output_xlsx, output_pdf):
+            raise RuntimeError("Không thể xuất Trang bìa đối chiếu sang PDF do thiếu Excel COM và LibreOffice.")
 
 
 def build_reconcile_list(input_dir: str) -> List[Dict]:
@@ -1483,26 +1546,44 @@ def batch_process(
     # 2. Xác định tiền tố tên file chung
     common_prefix = ""
     for it in reconcile_list:
-        rep = it['report_no']
-        if rep and rep != '(Không có - Chỉ RFI)':
-            m = re.match(r'^(.*-\D+)\d+$', rep)
+        rep = it.get('report_no')
+        if rep and rep != '(Không có - Chỉ RFI)' and '\n' not in rep:
+            m = re.match(r'^(.*-[A-Za-z]+-)\d+$', rep) or re.match(r'^(.*-\D+)\d+$', rep)
             if m:
                 common_prefix = m.group(1)
                 break
-        elif it.get('rfi_no'):
-            rfi_code = it['rfi_no']
-            m = re.match(r'^(.*-\D+)\d+$', rfi_code)
+        rfi_code = it.get('rfi_no')
+        if rfi_code and rfi_code != 'Chưa rõ' and '\n' not in rfi_code:
+            m = re.match(r'^(.*-[A-Za-z]+-)\d+$', rfi_code) or re.match(r'^(.*-\D+)\d+$', rfi_code)
             if m:
                 common_prefix = m.group(1).replace('-RFI-', '-')
                 break
-                
+        if it.get('rp_path'):
+            base = os.path.splitext(os.path.basename(it['rp_path']))[0]
+            m = re.match(r'^(.*-[A-Za-z]+-)\d+$', base) or re.match(r'^(.*-\D+)\d+$', base)
+            if m:
+                common_prefix = m.group(1)
+                break
+        if it.get('rfi_path'):
+            base = os.path.splitext(os.path.basename(it['rfi_path']))[0]
+            m = re.match(r'^(.*-[A-Za-z]+-)\d+$', base) or re.match(r'^(.*-\D+)\d+$', base)
+            if m:
+                common_prefix = m.group(1).replace('-RFI-', '-').split('_')[0] + '-'
+                break
+
     if not common_prefix:
-        common_prefix = "SWG-LLM18-70-PL-PLI-T11-CAI-"
+        sample_path = reconcile_list[0].get('rp_path') or reconcile_list[0].get('rfi_path') or ""
+        fname = os.path.basename(sample_path).upper()
+        detected_type = "REPORT"
+        for t in ["FUR", "VSR", "ICR", "MRIR", "DIC", "SPI", "CAI", "FTI", "HTI", "MTR", "PPP"]:
+            if t in fname:
+                detected_type = t
+                break
+        common_prefix = f"SWG-LLM18-70-PL-PLI-T11-{detected_type}-"
 
     # Kiểm tra bản vẽ nếu có hồ sơ cần bản vẽ (Không áp dụng cho ICR, MRIR, DIC)
     has_drawing_needed = any(not (it.get('is_icr') or it.get('is_mrir') or it.get('is_dic')) for it in reconcile_list)
-    if has_drawing_needed and not actual_drawing_path:
-        return {'success': False, 'message': f'Không tìm thấy file bản vẽ PDF nào trong thư mục {input_dir} hoặc thư mục gốc!'}
+    drawing_available = bool(actual_drawing_path and os.path.isfile(actual_drawing_path) and has_drawing_needed)
 
     now = datetime.datetime.now()
     timestamp_str = now.strftime('%Y%m%d-%Hh%M')
@@ -1528,32 +1609,31 @@ def batch_process(
                 if target_pno in sheet_map:
                     it['sheet_num'] = sheet_map[target_pno]
 
-    # 4. Khởi động Excel COM (Bắt buộc chạy trực tiếp trên máy tính có Microsoft Office)
-    if not HAS_WIN32COM:
+    # 4. Khởi động công cụ xuất PDF: Excel COM (Windows) hoặc LibreOffice (Linux/Docker)
+    excel = None
+    if HAS_WIN32COM:
+        try:
+            cleanup_headless_excel()
+            pythoncom.CoInitialize()
+            excel = win32com.client.DispatchEx('Excel.Application')
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            excel.AskToUpdateLinks = False
+            excel.AlertBeforeOverwriting = False
+            excel.EnableEvents = False
+            excel.ScreenUpdating = False
+        except Exception:
+            excel = None
+
+    lo_bin = find_libreoffice_binary() if excel is None else None
+    if excel is None and lo_bin is None:
         return {
             'success': False,
             'message': (
-                'Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) sử dụng trực tiếp Microsoft Office Excel của máy tính '
-                'để đảm bảo chuẩn xác 100% tỷ lệ in, font chữ và độ rộng cột theo biểu mẫu gốc. '
+                'Tính năng xuất PDF gộp (RFI + RP + Bản vẽ CAD) yêu cầu máy tính chạy có cài đặt Microsoft Office Excel '
+                'hoặc máy chủ có cài đặt LibreOffice Calc. '
                 'Vui lòng chạy trên máy tính Windows có cài đặt Microsoft Office (truy cập qua localhost hoặc link Cloudflare Tunnel).'
             )
-        }
-    
-    excel = None
-    try:
-        cleanup_headless_excel()
-        pythoncom.CoInitialize()
-        excel = win32com.client.DispatchEx('Excel.Application')
-        excel.Visible = False
-        excel.DisplayAlerts = False
-        excel.AskToUpdateLinks = False
-        excel.AlertBeforeOverwriting = False
-        excel.EnableEvents = False
-        excel.ScreenUpdating = False
-    except Exception as e:
-        return {
-            'success': False,
-            'message': f'Không thể khởi động Microsoft Office Excel COM: {e}. Vui lòng kiểm tra lại phần mềm Excel trên máy.'
         }
     
     try:
@@ -1595,7 +1675,7 @@ def batch_process(
                     doc_rp.close()
                 
                 # C. Trích xuất đúng trang bản vẽ và tô màu số mối (Không áp dụng cho hồ sơ ICR, MRIR và DIC)
-                if not (item.get('is_icr') or item.get('is_mrir') or item.get('is_dic')) and doc_drawing_source:
+                if not (item.get('is_icr') or item.get('is_mrir') or item.get('is_dic')) and drawing_available and doc_drawing_source:
                     sheet_num = item.get('sheet_num')
                     joints = item.get('joints_rp') if item.get('joints_rp') else item.get('joints_rfi', [])
                     target_pno = None
@@ -1657,6 +1737,7 @@ def batch_process(
         
     matched_total = sum(1 for d in reconcile_list if d['is_match'])
     warn_total = len(reconcile_list) - matched_total
+    note_dw = "" if drawing_available or not has_drawing_needed else " (Đã xuất Trang bìa đối chiếu, RFI và RP - Chưa nạp bản vẽ CAD cho trạm này)"
     
     return {
         'success': True,
@@ -1666,5 +1747,5 @@ def batch_process(
         'matched_count': matched_total,
         'warn_count': warn_total,
         'reconcile_data': reconcile_list,
-        'message': f"Đã gộp thành công {len(reconcile_list)} bộ hồ sơ thành 1 File PDF nối dài: {os.path.basename(combined_pdf_path)} ({total_pages} trang)"
+        'message': f"Đã gộp thành công {len(reconcile_list)} bộ hồ sơ thành 1 File PDF nối dài: {os.path.basename(combined_pdf_path)} ({total_pages} trang){note_dw}"
     }

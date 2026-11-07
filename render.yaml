@@ -1,12 +1,10 @@
 services:
   - type: web
     name: fome-rp-rfi-block-b
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python fome_web.py
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: FOME_WEB_HOST
         value: 0.0.0.0
+      - key: PORT
+        value: 8765
