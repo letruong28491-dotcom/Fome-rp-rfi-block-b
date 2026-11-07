@@ -7,21 +7,42 @@ echo ======================================================================
 echo    HỆ THỐNG PHÁT SÓNG FOME WEB RA TOÀN CẦU (INTERNET)
 echo ======================================================================
 echo.
-echo [1/2] Đang khởi động máy chủ Fome cục bộ...
-start "" "%~dp0Chay_Ngam_Khong_Cua_So.vbs"
-
-echo [2/2] Đang kết nối mạng Cloudflare Internet toàn cầu...
-echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "
+Write-Host '[1/2] Kiem tra may chu Fome Web cuc bo...' -ForegroundColor Cyan
+
+# Kiem tra neu port 8765 chua chay thi khoi dong python fome_web.py ngam
+$portActive = $false
+try {
+    $tcp = New-Object System.Net.Sockets.TcpClient
+    $tcp.Connect('127.0.0.1', 8765)
+    $tcp.Close()
+    $portActive = $true
+} catch {
+    $portActive = $false
+}
+
+if (-not $portActive) {
+    Write-Host '  -> Dang khoi dong may chu fome_web.py...' -ForegroundColor Yellow
+    $pyProc = Start-Process -FilePath 'python' -ArgumentList 'fome_web.py' -WorkingDirectory '%~dp0' -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 2
+} else {
+    Write-Host '  -> May chu fome_web.py da san sang.' -ForegroundColor Green
+}
+
+Write-Host '[2/2] Dang ket noi mang Cloudflare Internet toan cau...' -ForegroundColor Cyan
+
 $logFile = Join-Path $env:TEMP 'fome_tunnel.log'
 if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
+
+# Tat cloudflared cu neu co
+Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 $cloudflared = Join-Path '%~dp0' 'cloudflared.exe'
 $proc = Start-Process -FilePath $cloudflared -ArgumentList 'tunnel --url http://127.0.0.1:8765 --no-autoupdate' -RedirectStandardError $logFile -PassThru
 
 $url = ''
-for ($i=0; $i -lt 35; $i++) {
+for ($i=0; $i -lt 40; $i++) {
     Start-Sleep -Milliseconds 600
     if (Test-Path $logFile) {
         $content = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
@@ -33,23 +54,25 @@ for ($i=0; $i -lt 35; $i++) {
 }
 
 if ($url) {
+    Set-Clipboard -Value $url -ErrorAction SilentlyContinue
     Clear-Host
     Write-Host '======================================================================' -ForegroundColor Green
-    Write-Host '   CHÚC MỪNG! ỨNG DỤNG ĐÃ ĐƯỢC ĐƯA LÊN INTERNET THÀNH CÔNG!' -ForegroundColor Green
+    Write-Host '   CHUC MUNG! UNG DUNG DA DUOC DUA LEN INTERNET THANH CONG!' -ForegroundColor Green
     Write-Host '======================================================================' -ForegroundColor Green
     Write-Host ''
-    Write-Host '  ĐƯỜNG LINK ONLINE BẢO MẬT (TRUY CẬP TỪ MỌI NƠI):' -ForegroundColor Yellow
+    Write-Host '  DUONG LINK ONLINE BAO MAT (TRUY CAP TU MOI NOI):' -ForegroundColor Yellow
     Write-Host ('  ' + $url) -ForegroundColor Cyan
     Write-Host ''
-    Write-Host '  * Bạn có thể gửi link này qua Zalo/Email cho sếp hoặc đồng nghiệp.' -ForegroundColor White
-    Write-Host '  * Mở trên điện thoại, máy tính bảng hay máy tính bất kỳ đều dùng được.' -ForegroundColor White
-    Write-Host '  * Hoàn toàn không cần cài Python, không cần Office trên máy truy cập!' -ForegroundColor White
+    Write-Host '  (Da tu dong COPY link nay vao bo nho tam Clipboard cua ban)' -ForegroundColor Gray
+    Write-Host '  * Ban co the paste (Ctrl+V) link nay gui qua Zalo cho dong nghiep.' -ForegroundColor White
+    Write-Host '  * Mo tren dien thoai, may tinh bang hay may tinh bat ky deu dung duoc.' -ForegroundColor White
+    Write-Host '  * Hoan toan khong can cai Python, khong can Office tren may truy cap!' -ForegroundColor White
     Write-Host ''
-    Write-Host '  LƯU Ý: GIỮ NGUYÊN CỬA SỔ NÀY ĐỂ DUY TRÌ ĐƯỜNG TRUYỀN INTERNET.' -ForegroundColor Yellow
+    Write-Host '  LUU Y: GIU NGUYEN CUA SO NAY DE DUY TRI DUONG TRUYEN INTERNET.' -ForegroundColor Yellow
     Write-Host '======================================================================' -ForegroundColor Green
     Start-Process $url
 } else {
-    Write-Host 'Chưa lấy được link tự động. Hãy đảm bảo máy tính có kết nối mạng Internet.' -ForegroundColor Red
+    Write-Host 'Chua lay duoc link tu dong. Hay dam bao may tinh co ket noi mang Internet.' -ForegroundColor Red
 }
 
 Wait-Process -Id $proc.Id
