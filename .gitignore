@@ -29,3 +29,5 @@ Thumbs.db
 
 *.exe
 scratch/
+
+Fome_Web_Data/sessions.json
