@@ -3429,9 +3429,9 @@ RP_SELECTORS = {
 
     "PPP": "J6",
 
-    "FUR": "M7",
+    "FUR": "O7",
 
-    "VSR": "L7",
+    "VSR": "M7",
 
     "DIC": "O8",
 
@@ -9826,7 +9826,18 @@ def generate_rp_workbook(
 
         helper_values[(target_sheet.title, selector)] = rfi_id
 
-        target_sheet[selector] = rfi_id
+        target_cell = target_sheet[selector]
+        if isinstance(target_cell, MergedCell):
+            tl_cell = None
+            for m in target_sheet.merged_cells.ranges:
+                if m.min_row <= target_cell.row <= m.max_row and m.min_col <= target_cell.column <= m.max_col:
+                    tl_cell = target_sheet.cell(row=m.min_row, column=m.min_col)
+                    break
+            if tl_cell is not None:
+                tl_cell.value = rfi_id
+                helper_values[(target_sheet.title, tl_cell.coordinate)] = rfi_id
+        else:
+            target_cell.value = rfi_id
 
     engine = RPFormulaEngine(
 
