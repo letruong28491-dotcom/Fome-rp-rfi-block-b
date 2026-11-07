@@ -3504,7 +3504,7 @@
 
         if ($("data-cutoff-text")) {
 
-          $("data-cutoff-text").innerHTML = `📅 Dữ liệu nguồn: <strong>${dv.cutoff_date}</strong> (Bản chốt gần nhất)`;
+          $("data-cutoff-text").innerHTML = `📅 Dữ liệu nguồn: <strong>${dv.cutoff_date}</strong>${dv.last_update_time ? ' · Cập nhật: <strong>' + dv.last_update_time + '</strong>' : ''} (Bản chốt gần nhất)`;
 
         }
 
@@ -3680,7 +3680,7 @@
 
             chip.className = "template-chip";
 
-            const timeStr = template.modified ? ` (${new Date(template.modified).toLocaleDateString("vi-VN")})` : "";
+            const timeStr = (template.updated_at || template.modified) ? ` (${template.updated_at || template.modified})` : "";
 
             chip.textContent = `${template.type} · ${template.filename}${timeStr}`;
 
@@ -3984,7 +3984,7 @@
 
       const savedLoc = localStorage.getItem("fome_active_location");
 
-      const targetLoc = selected || result.default || (savedLoc && result.sites.includes(savedLoc) ? savedLoc : result.sites[0]);
+      const targetLoc = selected || (savedLoc && result.sites.includes(savedLoc) ? savedLoc : (result.default || result.sites[0]));
 
       state.location = targetLoc;
 
@@ -3996,28 +3996,29 @@
 
 
 
-    $("location").addEventListener("change", () => {
-
+        $("location").addEventListener("change", async () => {
       state.location = $("location").value;
-
       localStorage.setItem("fome_active_location", state.location);
 
-      fetch("/api/active-site", {
+      if ($("overview-loc-title")) $("overview-loc-title").textContent = state.location;
+      if ($("sidebar-active-loc")) $("sidebar-active-loc").textContent = state.location;
+      if ($("data-tab-current-loc")) $("data-tab-current-loc").textContent = state.location;
+      if ($("progress-site-name")) $("progress-site-name").textContent = state.location;
+      if ($("overview-controlog-file")) $("overview-controlog-file").textContent = "Đang nhận dữ liệu...";
+      if ($("overview-form-file")) $("overview-form-file").textContent = "Đang nhận dữ liệu...";
+      if ($("overview-record-count")) $("overview-record-count").textContent = "--";
 
-        method: "POST",
-
-        headers: { "Content-Type": "application/json" },
-
-        body: JSON.stringify({ location: state.location }),
-
-      }).catch(() => {});
+      try {
+        await fetch("/api/active-site", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location: state.location }),
+        });
+      } catch (_) {}
 
       $("search").value = "";
-
-      loadStatus().catch((error) => showMessage(error.message, "error"));
-
-      loadProgress();
-
+      await loadStatus().catch((error) => showMessage(error.message, "error"));
+      await loadProgress();
     });
 
 

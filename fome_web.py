@@ -610,6 +610,35 @@ SITE_CODE_RE = re.compile(r"^[A-Z0-9][A-Z0-9_-]{1,30}$")
 
 
 
+
+def save_template_upload_meta(location: str, family: str, report_type: str, original_filename: str, file_size: int, updated_at: str, updated_by: str) -> None:
+    try:
+        folder = site_data_dir(location)
+        folder.mkdir(parents=True, exist_ok=True)
+        cfg_path = folder / "site_config.json"
+        data = {}
+        if cfg_path.is_file():
+            try:
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        if "templates_meta" not in data or not isinstance(data["templates_meta"], dict):
+            data["templates_meta"] = {}
+        t_key = f"{family}_{report_type.lower()}"
+        data["templates_meta"][t_key] = {
+            "family": family,
+            "type": report_type,
+            "original_filename": original_filename,
+            "size": file_size,
+            "updated_at": updated_at,
+            "updated_by": updated_by,
+        }
+        cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _SITE_CONFIG_CACHE.pop(location, None)
+    except Exception:
+        pass
+
+
 HOST = os.environ.get("FOME_WEB_HOST", "0.0.0.0")
 
 
@@ -3171,134 +3200,37 @@ def list_sites() -> list[str]:
 
 
 def site_root(location: str) -> Path:
-
-
-
-
-
-
-
     location = validate_site_code(location, require_existing=False)
-
-
-
-
-
-
-
-    return ROOT if location == DEFAULT_SITE else SITES_DIR / location
-
-
-
-
-
-
+    site_dir = SITES_DIR / location
+    if site_dir.is_dir():
+        return site_dir
+    return site_dir
 
 def site_data_dir(location: str) -> Path:
-
-
-
-
-
-
-
     location = validate_site_code(location, require_existing=False)
-
-
-
-
-
-
-
-    return DATA_DIR if location == DEFAULT_SITE else site_root(location) / "Fome_Web_Data"
-
-
-
-
-
-
+    site_dir = SITES_DIR / location
+    site_fome_data = site_dir / "Fome_Web_Data"
+    if site_fome_data.is_dir():
+        return site_fome_data
+    if location == DEFAULT_SITE and DATA_DIR.is_dir() and not site_fome_data.is_dir():
+        return DATA_DIR
+    return site_fome_data
 
 def site_template_dir(location: str, family: str) -> Path:
-
-
-
-
-
-
-
     if family not in {"rfi", "rp"}:
-
-
-
-
-
-
-
         raise UserError("Không nhận diện được nhóm biểu mẫu.")
-
-
-
-
-
-
-
-    if location == DEFAULT_SITE:
-
-
-
-
-
-
-
-        folder_name = "RFI 15A" if family == "rfi" else "RP 15A"
-
-
-
-
-
-
-
-        return ROOT / folder_name
-
-
-
-
-
-
-
+    location = validate_site_code(location, require_existing=False)
     site = SITES_DIR / location
-
-
-
-
-
-
-
     generic = site / ("RFI" if family == "rfi" else "RP")
-
-
-
-
-
-
-
-    legacy = site / ("RFI 15A" if family == "rfi" else "RP 15A")
-
-
-
-
-
-
-
-    if generic.is_dir():
-
-
-
-
-
-
-
+    if generic.is_dir() and any(generic.iterdir()):
         return generic
+    legacy = site / ("RFI 15A" if family == "rfi" else "RP 15A")
+    if legacy.is_dir() and any(legacy.iterdir()):
+        return legacy
+    root_legacy = ROOT / ("RFI 15A" if family == "rfi" else "RP 15A")
+    if location in ("TTC15A", "T15A") and root_legacy.is_dir() and any(root_legacy.iterdir()):
+        return root_legacy
+    return generic
 
 
 
@@ -4163,70 +4095,55 @@ def create_site(
 
 
 def source_path(key: str, location: str = DEFAULT_SITE) -> Path:
-
-
-
-
-
-
-
     if key not in SOURCES:
-
-
-
-
-
-
-
         raise UserError("Không nhận diện được loại file dữ liệu.")
-
-
-
-
-
-
-
     location = validate_site_code(location, require_existing=False)
-
-
-
-
-
-
-
     folder = site_data_dir(location)
-
-
-
-
-
-
-
     std_name = source_filename(key, location)
-
-
-
-
-
-
-
     std_path = folder / std_name
 
-
-
-
-
-
-
     if not folder.is_dir():
-
-
-
-
-
-
-
         return std_path
+
+    candidates: list[Path] = []
+    if std_path.is_file():
+        candidates.append(std_path)
+
+    loc_upper = location.upper()
+    try:
+        for item in folder.iterdir():
+            if not item.is_file() or item.suffix.lower() not in {".xlsx", ".xlsm"}:
+                continue
+            if item.name.startswith("~") or item.name.endswith(".upload"):
+                continue
+            name_lower = item.name.lower()
+            if key == "controlog" and ("control" in name_lower or "ctrl" in name_lower):
+                candidates.append(item)
+            elif key == "rfi_data" and ("form" in name_lower or "rfi" in name_lower):
+                candidates.append(item)
+    except Exception:
+        pass
+
+    if candidates:
+        exact_match = [
+            c for c in candidates
+            if loc_upper in c.stem.upper()
+            and not re.search(re.escape(loc_upper) + r"[A-Z0-9]", c.stem.upper())
+        ]
+        if exact_match:
+            return max(exact_match, key=lambda p: p.stat().st_mtime)
+
+        other_sites = [s.upper() for s in list_sites() if s.upper() != loc_upper]
+        pure_candidates = [
+            c for c in candidates
+            if not any(re.search(r"\b" + re.escape(o) + r"\b", c.stem.upper()) for o in other_sites)
+        ]
+        if pure_candidates:
+            return max(pure_candidates, key=lambda p: p.stat().st_mtime)
+
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+
+    return std_path
 
 
 
@@ -4634,6 +4551,8 @@ def form_sheet_name(workbook) -> str | None:
 
 
 
+_RECORDS_CACHE: dict[str, tuple[float, list, dict, list]] = {}
+
 def load_records(
 
 
@@ -4691,14 +4610,17 @@ def load_records(
 
 
             f"Vị trí {location} chưa có file nguồn {source_filename('rfi_data', location)}."
-
-
-
-
-
-
-
         )
+
+    try:
+        cur_mtime = path.stat().st_mtime
+    except Exception:
+        cur_mtime = 0
+
+    if location in _RECORDS_CACHE:
+        c_mtime, c_recs, c_rows, c_dups = _RECORDS_CACHE[location]
+        if c_mtime == cur_mtime and c_recs:
+            return list(c_recs), dict(c_rows), list(c_dups)
 
 
 
@@ -5314,7 +5236,10 @@ def load_records(
 
 
 
+    _RECORDS_CACHE[location] = (cur_mtime, list(records), dict(rows_by_id), list(duplicate_ids))
     return records, rows_by_id, duplicate_ids
+
+
 
 
 
@@ -49806,221 +49731,59 @@ def validate_template_upload(filename: str, content: bytes, family: str) -> str:
 
 
 def available_templates(location: str) -> dict[str, list[dict[str, str]]]:
-
-
-
-
-
-
-
     result: dict[str, list[dict[str, str]]] = {"rfi": [], "rp": []}
-
-
-
-
-
-
+    
+    cfg_file = site_data_dir(location) / "site_config.json"
+    site_meta = {}
+    if cfg_file.is_file():
+        try:
+            site_meta = json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    sources_meta = site_meta.get("sources_meta", {}) if isinstance(site_meta, dict) else {}
+    templates_meta = site_meta.get("templates_meta", {}) if isinstance(site_meta, dict) else {}
 
     for family in ("rfi", "rp"):
-
-
-
-
-
-
-
         folder = site_template_dir(location, family)
-
-
-
-
-
-
-
         if not folder.is_dir():
-
-
-
-
-
-
-
             continue
-
-
-
-
-
-
-
         found: dict[str, tuple[float, dict[str, str]]] = {}
-
-
-
-
-
-
-
         for path in folder.iterdir():
-
-
-
-
-
-
-
             if path.suffix.lower() not in {".xlsx", ".xlsm"}:
-
-
-
-
-
-
-
                 continue
-
-
-
-
-
-
-
             if family == "rfi" and path.name.startswith("FORM CHOOSE"):
-
-
-
-
-
-
-
                 continue
-
-
-
-
-
-
-
             try:
-
-
-
-
-
-
-
                 report_type = template_report_type(path.name, family)
-
-
-
-
-
-
-
             except UserError:
-
-
-
-
-
-
-
                 continue
-
-
-
-
-
-
 
             mtime = path.stat().st_mtime
+            t_key = f"{family}_{report_type.lower()}"
+            t_meta = templates_meta.get(t_key) or sources_meta.get(f"template_{t_key}") or sources_meta.get(path.name) or {}
+            
+            updated_at_str = ""
+            updated_by_str = ""
+            if isinstance(t_meta, dict):
+                updated_at_str = str(t_meta.get("updated_at", "")).strip()
+                updated_by_str = str(t_meta.get("updated_by", "")).strip()
 
-
-
-
-
-
+            file_mtime_str = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M:%S")
+            if not updated_at_str:
+                updated_at_str = file_mtime_str
 
             if report_type not in found or mtime > found[report_type][0]:
-
-
-
-
-
-
-
                 found[report_type] = (
-
-
-
-
-
-
-
                     mtime,
-
-
-
-
-
-
-
                     {
-
-
-
-
-
-
-
                         "type": report_type,
-
-
-
-
-
-
-
                         "filename": path.name,
-
-
-
-
-
-
-
-                        "modified": datetime.fromtimestamp(mtime).isoformat(timespec="minutes"),
-
-
-
-
-
-
-
+                        "modified": file_mtime_str,
+                        "updated_at": updated_at_str,
+                        "updated_by": updated_by_str,
                     },
-
-
-
-
-
-
-
                 )
-
-
-
-
-
-
-
         result[family] = [found[key][1] for key in sorted(found)]
-
-
-
-
-
-
-
     return result
 
 
@@ -55730,6 +55493,7 @@ class FomeHandler(BaseHTTPRequestHandler):
 
 
             _RP_SOURCE_TABLES_CACHE.pop(location, None)
+            _RECORDS_CACHE.pop(location, None)
 
 
 
@@ -56478,6 +56242,7 @@ class FomeHandler(BaseHTTPRequestHandler):
 
 
             save_source_upload_meta(location, f"template_{family}_{report_type.lower()}", filename, len(content), now_str, u_name)
+            save_template_upload_meta(location, family, report_type, filename, len(content), now_str, u_name)
 
 
 
