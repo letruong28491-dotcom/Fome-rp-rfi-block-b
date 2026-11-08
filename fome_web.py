@@ -52999,20 +52999,15 @@ class FomeHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/test-lo":
             import subprocess, shutil, uuid, time
             lo_bin = shutil.which("libreoffice") or shutil.which("soffice") or "/usr/bin/libreoffice"
-            lo_exists = os.path.isfile(lo_bin) or bool(shutil.which(lo_bin))
-            results = []
-            
-            # Test different combinations of env vars and arguments
-            combos = [
-                {"vcl": "svp", "args": ["--headless", "--convert-to", "pdf:calc_pdf_Export"]},
-                {"vcl": "gen", "args": ["--headless", "--convert-to", "pdf:calc_pdf_Export"]},
-                {"vcl": "none", "args": ["--headless", "--convert-to", "pdf:calc_pdf_Export"]},
-                {"vcl": "svp", "args": ["--headless", "--convert-to", "pdf"]},
-                {"vcl": "gen", "args": ["--headless", "--convert-to", "pdf"]},
-                {"vcl": "none", "args": ["--headless", "--convert-to", "pdf"]}
-            ]
-            
-            for combo in combos:
+            xvfb_bin = shutil.which("xvfb-run") or "/usr/bin/xvfb-run"
+            test_res = {
+                "lo_bin": str(lo_bin),
+                "lo_exists": bool(shutil.which("libreoffice")),
+                "xvfb_bin": str(xvfb_bin),
+                "xvfb_exists": bool(shutil.which("xvfb-run") or os.path.isfile(str(xvfb_bin))),
+                "platform": sys.platform
+            }
+            if test_res["lo_exists"]:
                 test_dir = tempfile.mkdtemp()
                 test_xlsx = os.path.join(test_dir, "test.xlsx")
                 try:
@@ -53024,39 +53019,35 @@ class FomeHandler(BaseHTTPRequestHandler):
                     wb.save(test_xlsx)
                     wb.close()
                     prof_dir = os.path.join(test_dir, "lo_" + uuid.uuid4().hex).replace('\\', '/')
-                    
-                    env = os.environ.copy()
-                    if combo["vcl"] != "none":
-                        env["SAL_USE_VCLPLUGIN"] = combo["vcl"]
-                    elif "SAL_USE_VCLPLUGIN" in env:
-                        del env["SAL_USE_VCLPLUGIN"]
-                        
-                    cmd = [
+                    lo_args = [
                         lo_bin,
                         "-env:UserInstallation=file:///" + prof_dir,
+                        "--headless",
                         "--norestore",
                         "--nolockcheck",
-                        "--nodefault"
-                    ] + combo["args"] + ["--outdir", test_dir, test_xlsx]
-                    
+                        "--nodefault",
+                        "--convert-to", "pdf:calc_pdf_Export",
+                        "--outdir", test_dir,
+                        test_xlsx
+                    ]
+                    if test_res["xvfb_exists"]:
+                        cmd = [str(xvfb_bin), "-a", "--server-args=-screen 0 1024x768x24"] + lo_args
+                    else:
+                        cmd = lo_args
                     t0 = time.time()
-                    proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                    test_res["duration"] = round(time.time() - t0, 2)
+                    test_res["returncode"] = proc.returncode
+                    test_res["stdout"] = proc.stdout
+                    test_res["stderr"] = proc.stderr
                     out_pdf = os.path.join(test_dir, "test.pdf")
-                    results.append({
-                        "combo": combo,
-                        "duration": round(time.time() - t0, 2),
-                        "returncode": proc.returncode,
-                        "stdout": proc.stdout[:200],
-                        "stderr": proc.stderr[:200],
-                        "pdf_exists": os.path.isfile(out_pdf),
-                        "pdf_size": os.path.getsize(out_pdf) if os.path.isfile(out_pdf) else 0
-                    })
+                    test_res["pdf_exists"] = os.path.isfile(out_pdf)
+                    test_res["pdf_size"] = os.path.getsize(out_pdf) if os.path.isfile(out_pdf) else 0
                 except Exception as e:
-                    results.append({"combo": combo, "error": str(e)})
+                    test_res["error"] = str(e)
                 finally:
                     shutil.rmtree(test_dir, ignore_errors=True)
-                    
-            self.send_json(200, {"results": results, "platform": sys.platform})
+            self.send_json(200, test_res)
             return
 
         if parsed.path == "/favicon.ico":

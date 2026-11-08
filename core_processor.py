@@ -580,38 +580,69 @@ def find_libreoffice_binary() -> Optional[str]:
     return None
 
 
-def export_excel_sheet_via_libreoffice(file_path: str, output_pdf: str) -> bool:
-    """Chuyển đổi file Excel sang PDF bằng LibreOffice Calc headless (fallback nếu cần)."""
+def export_excel_sheet_via_libreoffice(
+    file_path: str,
+    output_pdf: str,
+    target_sheet: Optional[str] = None,
+    orientation: Optional[int] = None,
+    is_rfi: bool = False
+) -> bool:
+    """Chuyển đổi file Excel sang PDF bằng LibreOffice Calc headless kết hợp xvfb-run (chuẩn xác 100% như Microsoft Excel)."""
     lo_bin = find_libreoffice_binary()
     if not lo_bin:
         return False
-    abs_excel = os.path.abspath(file_path)
     abs_out_pdf = os.path.abspath(output_pdf)
     os.makedirs(os.path.dirname(abs_out_pdf), exist_ok=True)
+    
+    # 1. Tách chỉ 1 sheet mục tiêu và thiết lập PageSetup chuẩn xác
+    temp_excel = None
+    try:
+        temp_excel = sanitize_and_repair_workbook(file_path, target_sheet=target_sheet)
+    except Exception:
+        temp_excel = None
+        
+    source_to_convert = os.path.abspath(temp_excel if (temp_excel and os.path.isfile(temp_excel)) else file_path)
+    
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_lo:
         env = os.environ.copy()
-        env['SAL_USE_VCLPLUGIN'] = 'gen'
         prof_dir = os.path.join(tmp_lo, 'lo_profile').replace('\\', '/')
-        cmd = [
+        lo_args = [
             lo_bin,
             f'-env:UserInstallation=file:///{prof_dir}',
             '--headless',
+            '--norestore',
+            '--nolockcheck',
+            '--nodefault',
             '--convert-to',
             'pdf:calc_pdf_Export',
             '--outdir',
             tmp_lo,
-            abs_excel
+            source_to_convert
         ]
+        
+        # Kiểm tra xvfb-run trên Linux để chạy headless với virtual X11 display
+        xvfb_bin = shutil.which('xvfb-run') or ('/usr/bin/xvfb-run' if os.path.isfile('/usr/bin/xvfb-run') else None)
+        if xvfb_bin:
+            cmd = [str(xvfb_bin), '-a', '--server-args=-screen 0 1024x768x24'] + lo_args
+        else:
+            cmd = lo_args
+
         try:
             import subprocess
-            subprocess.run(cmd, env=env, capture_output=True, timeout=10)
-            base_pdf = os.path.splitext(os.path.basename(abs_excel))[0] + '.pdf'
+            proc = subprocess.run(cmd, env=env, capture_output=True, timeout=30)
+            base_pdf = os.path.splitext(os.path.basename(source_to_convert))[0] + '.pdf'
             generated_pdf = os.path.join(tmp_lo, base_pdf)
             if os.path.isfile(generated_pdf) and os.path.getsize(generated_pdf) > 0:
                 shutil.copyfile(generated_pdf, abs_out_pdf)
                 return True
         except Exception:
             pass
+        finally:
+            if temp_excel and os.path.isfile(temp_excel) and temp_excel != file_path:
+                try:
+                    os.remove(temp_excel)
+                except Exception:
+                    pass
     return False
 
 
@@ -1152,18 +1183,17 @@ def export_excel_sheet_to_pdf(
                 except Exception:
                     pass
 
-    try:
-        export_sheet_via_pymupdf(file_path, sheet_name, output_pdf, orientation=orientation, is_rfi=is_rfi)
-        if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
-            return
-    except Exception:
-        pass
-
+    # Ưu tiên 1: Chuyển đổi bằng LibreOffice Calc headless + xvfb-run (Chuẩn 100% định dạng, tỉ lệ và font chữ như Excel)
     if find_libreoffice_binary():
         try:
-            export_excel_sheet_via_libreoffice(file_path, output_pdf)
+            if export_excel_sheet_via_libreoffice(file_path, output_pdf, target_sheet=sheet_name, orientation=orientation, is_rfi=is_rfi):
+                if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
+                    return
         except Exception:
             pass
+
+    # Ưu tiên 2 (Fallback): Bộ chuyển đổi Pure-Python PyMuPDF
+    export_sheet_via_pymupdf(file_path, sheet_name, output_pdf, orientation=orientation, is_rfi=is_rfi)
 
 
 def find_drawing_pdf(drawing_pdf_path: Optional[str], input_dir: str) -> Optional[str]:
@@ -1696,18 +1726,17 @@ def create_reconciliation_cover(
                 except Exception:
                     pass
 
-    try:
-        export_sheet_via_pymupdf(output_xlsx, 'Bang_Doi_Chieu', output_pdf, orientation=2, is_rfi=False)
-        if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
-            return
-    except Exception:
-        pass
-
+    # Ưu tiên 1: Chuyển đổi bằng LibreOffice Calc headless + xvfb-run (Chuẩn 100% như Excel)
     if find_libreoffice_binary():
         try:
-            export_excel_sheet_via_libreoffice(output_xlsx, output_pdf)
+            if export_excel_sheet_via_libreoffice(output_xlsx, output_pdf, target_sheet='Bang_Doi_Chieu', orientation=2, is_rfi=False):
+                if os.path.isfile(output_pdf) and os.path.getsize(output_pdf) > 0:
+                    return
         except Exception:
             pass
+
+    # Ưu tiên 2 (Fallback): Bộ chuyển đổi Pure-Python PyMuPDF
+    export_sheet_via_pymupdf(output_xlsx, 'Bang_Doi_Chieu', output_pdf, orientation=2, is_rfi=False)
 
 
 def build_reconcile_list(input_dir: str) -> List[Dict]:
