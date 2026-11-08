@@ -119,6 +119,8 @@ def parse_rp_excel(file_path: str) -> Dict:
     joints = []
     
     is_fur = ('FUR' in target_sheet_name.upper()) or ('-FUR-' in os.path.basename(file_path).upper())
+    is_vsr = ('VSR' in target_sheet_name.upper()) or ('-VSR-' in os.path.basename(file_path).upper())
+    is_mtr = ('MTR' in target_sheet_name.upper()) or ('-MTR-' in os.path.basename(file_path).upper())
     is_icr = ('ICR' in target_sheet_name.upper()) or ('-ICR-' in os.path.basename(file_path).upper())
     is_ppp = ('PPP' in target_sheet_name.upper()) or ('-PPP-' in os.path.basename(file_path).upper())
     is_mrir = ('MRIR' in target_sheet_name.upper()) or ('-MRIR-' in os.path.basename(file_path).upper()) or ('_MRIR' in os.path.basename(file_path).upper()) or ('RP-MRIR' in os.path.basename(file_path).upper()) or ('RP -MRIR' in os.path.basename(file_path).upper()) or os.path.basename(file_path).upper().startswith('MRIR')
@@ -224,8 +226,8 @@ def parse_rp_excel(file_path: str) -> Dict:
                 item_str = f"{stype} ({sid})" if sid else stype
                 if item_str not in joints:
                     joints.append(item_str)
-    elif is_fur or is_ppp:
-        # Đối với mẫu báo cáo FUR và PPP: thông tin đối chiếu ở Rp-FUR / Rp-PPP là cột số mối hàn (Cột B)
+    elif is_fur or is_ppp or is_vsr or is_mtr:
+        # Đối với mẫu báo cáo FUR, PPP, VSR, MTR: thông tin đối chiếu ở Rp là cột số mối hàn (Cột B)
         start_row = 10
         for r in range(1, 25):
             val_b = str(ws.cell(r, 2).value or '').strip()
@@ -1419,7 +1421,13 @@ def find_drawing_page_for_joints(doc: pymupdf.Document, joints: List[str], sheet
     if idx and idx.get('joints'):
         page_counts = {}
         for nj in norm_joints:
-            for it in idx['joints'].get(nj, []):
+            items = idx['joints'].get(nj, [])
+            if not items:
+                for k, v in idx['joints'].items():
+                    if k.endswith(nj) or (len(nj) > 3 and nj.endswith(k)):
+                        items = v
+                        break
+            for it in items:
                 p = it['pno']
                 page_counts[p] = page_counts.get(p, 0) + 1
         if page_counts:
@@ -1486,10 +1494,19 @@ def highlight_joints_on_page(page: pymupdf.Page, joints: List[str], dpi: int = 2
         norm_joints = [normalize_code(j) for j in joints if j]
         for nj in norm_joints:
             items = idx['joints'].get(nj, [])
+            if not items:
+                # Hỗ trợ tìm kiếm nếu tên mối trong báo cáo ghi ngắn gọn (ví dụ W23 vs KP39W23)
+                for k, v in idx['joints'].items():
+                    if k.endswith(nj) or (len(nj) > 3 and nj.endswith(k)):
+                        matching_items = [it for it in v if (pno is None or it.get('pno') == pno)]
+                        if matching_items:
+                            items = matching_items
+                            break
             for it in items:
                 if pno is None or it.get('pno') == pno:
                     vx0, vy0, vx1, vy1 = it['rect']
-                    r_vis = pymupdf.Rect(vx0 - 2, vy0 - 1.5, vx1 + 2, vy1 + 1.5)
+                    # Ôm sát tuyệt đối khung số mối hàn, không lấn đè sang hàng mối kế cạnh
+                    r_vis = pymupdf.Rect(vx0 - 1.0, vy0 - 0.8, vx1 + 1.0, vy1 + 0.8)
                     r_unrot = r_vis * page.derotation_matrix
                     page.draw_rect(
                         r_unrot,
@@ -2195,11 +2212,11 @@ def batch_process(
                     dw_page_doc.insert_pdf(doc_drawing_source, from_page=target_pno, to_page=target_pno)
                     p = dw_page_doc[0]
                     
-                    # Tô màu highlight chuẩn xác không lem
-                    highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=target_pno)
-
-                    # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
+                    # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định trước (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
                     apply_drawing_margins_cbb(dw_page_doc, p)
+
+                    # Tô màu highlight chuẩn xác không lem theo đúng số mối hàn báo cáo trên hệ tọa độ bản vẽ đã căn chuẩn lề
+                    highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=target_pno)
                     
                     final_doc.insert_pdf(dw_page_doc)
                     dw_page_doc.close()
