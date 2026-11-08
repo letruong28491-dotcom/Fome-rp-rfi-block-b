@@ -711,6 +711,96 @@ def export_excel_sheet_via_libreoffice(
     return False
 
 
+def preserve_drawings_in_sanitized_xlsx(source_file: str, sanitized_file: str, target_sheet_name: Optional[str] = None) -> None:
+    """
+    Khôi phục 100% hình ảnh (media), Group Shapes và drawings từ source_file vào sanitized_file.
+    Openpyxl khi load/save sẽ tự ý loại bỏ Group Shapes (grpSp), làm mất logo PTSC trong các biểu mẫu SPI, DIC.
+    Hàm này bảo toàn trọn vẹn drawings, connectors (đường gạch chéo), logos và media gốc.
+    """
+    import zipfile
+    if not (os.path.isfile(source_file) and os.path.isfile(sanitized_file)):
+        return
+
+    try:
+        with zipfile.ZipFile(source_file, 'r') as z_src:
+            src_names = z_src.namelist()
+            has_media = any(n.startswith('xl/media/') for n in src_names)
+            has_drawings = any(n.startswith('xl/drawings/') for n in src_names)
+            if not (has_media or has_drawings):
+                return
+
+            src_entries = {n: z_src.read(n) for n in src_names if n.startswith('xl/media/') or n.startswith('xl/drawings/')}
+
+            drawing_target_file = None
+            if target_sheet_name and 'xl/workbook.xml' in src_names and 'xl/_rels/workbook.xml.rels' in src_names:
+                try:
+                    wb_xml = z_src.read('xl/workbook.xml').decode('utf-8', errors='ignore')
+                    wb_rels = z_src.read('xl/_rels/workbook.xml.rels').decode('utf-8', errors='ignore')
+
+                    esc_name = re.escape(target_sheet_name)
+                    p1 = r'<[^:]*sheet[^>]+name="' + esc_name + r'"[^>]+r:id="([^"]+)"'
+                    p2 = r'<[^:]*sheet[^>]+r:id="([^"]+)"[^>]+name="' + esc_name + r'"'
+                    match_sheet = re.search(p1, wb_xml, re.IGNORECASE) or re.search(p2, wb_xml, re.IGNORECASE)
+
+                    if match_sheet:
+                        r_id = match_sheet.group(1)
+                        p_target = r'<Relationship[^>]+Id="' + re.escape(r_id) + r'"[^>]+Target="([^"]+)"'
+                        match_target = re.search(p_target, wb_rels)
+                        if match_target:
+                            sheet_xml_name = os.path.basename(match_target.group(1))
+                            sheet_rels_path = f"xl/worksheets/_rels/{sheet_xml_name}.rels"
+                            if sheet_rels_path in src_names:
+                                sheet_rels_xml = z_src.read(sheet_rels_path).decode('utf-8', errors='ignore')
+                                match_drw = re.search(r'<Relationship[^>]+Type="[^"]*drawing"[^>]+Target="([^"]+)"', sheet_rels_xml)
+                                if match_drw:
+                                    raw_target = match_drw.group(1)
+                                    drawing_target_file = os.path.normpath(os.path.join("xl/worksheets", raw_target)).replace('\\', '/')
+                except Exception:
+                    pass
+
+        with zipfile.ZipFile(sanitized_file, 'r') as z_san:
+            san_entries = {n: z_san.read(n) for n in z_san.namelist()}
+
+        for name, data in src_entries.items():
+            if name.startswith('xl/media/'):
+                san_entries[name] = data
+
+        if drawing_target_file and drawing_target_file in src_entries:
+            drawing_base = os.path.basename(drawing_target_file)
+            drw_rel_src = f"xl/drawings/_rels/{drawing_base}.rels"
+
+            san_entries['xl/drawings/drawing1.xml'] = src_entries[drawing_target_file]
+            if drw_rel_src in src_entries:
+                san_entries['xl/drawings/_rels/drawing1.xml.rels'] = src_entries[drw_rel_src]
+
+            sheet1_rels_xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>'
+            san_entries['xl/worksheets/_rels/sheet1.xml.rels'] = sheet1_rels_xml.encode('utf-8')
+        else:
+            for name, data in src_entries.items():
+                if name.startswith('xl/drawings/'):
+                    san_entries[name] = data
+
+        if '[Content_Types].xml' in san_entries:
+            ct_xml = san_entries['[Content_Types].xml'].decode('utf-8', errors='ignore')
+            if 'Extension="png"' not in ct_xml:
+                ct_xml = ct_xml.replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>')
+            if 'Extension="jpeg"' not in ct_xml:
+                ct_xml = ct_xml.replace('</Types>', '<Default Extension="jpeg" ContentType="image/jpeg"/></Types>')
+            if 'Extension="jpg"' not in ct_xml:
+                ct_xml = ct_xml.replace('</Types>', '<Default Extension="jpg" ContentType="image/jpeg"/></Types>')
+            if 'Extension="emf"' not in ct_xml:
+                ct_xml = ct_xml.replace('</Types>', '<Default Extension="emf" ContentType="image/x-emf"/></Types>')
+            if '/xl/drawings/drawing1.xml' not in ct_xml:
+                ct_xml = ct_xml.replace('</Types>', '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>')
+            san_entries['[Content_Types].xml'] = ct_xml.encode('utf-8')
+
+        with zipfile.ZipFile(sanitized_file, 'w', compression=zipfile.ZIP_DEFLATED) as z_out:
+            for name, data in san_entries.items():
+                z_out.writestr(name, data)
+    except Exception:
+        pass
+
+
 def sanitize_and_repair_workbook(
     file_path: str,
     target_sheet: Optional[str] = None,
@@ -777,6 +867,9 @@ def sanitize_and_repair_workbook(
                 ws.page_setup.fitToWidth = 1
             if ws.title == 'Bang_Doi_Chieu':
                 ws.page_setup.fitToHeight = 1
+            else:
+                num_breaks = len(ws.row_breaks) if hasattr(ws, 'row_breaks') and ws.row_breaks else 0
+                ws.page_setup.fitToHeight = max(1, num_breaks + 1)
         except Exception:
             pass
 
@@ -786,6 +879,13 @@ def sanitize_and_repair_workbook(
         tmp_name = f"repaired_{uuid.uuid4().hex[:8]}_{os.path.basename(file_path)}"
         tmp_path = os.path.join(tempfile.gettempdir(), tmp_name)
     wb.save(tmp_path)
+
+    # Bảo toàn 100% drawings, connectors và logos (PTSC, Lilama)
+    try:
+        preserve_drawings_in_sanitized_xlsx(file_path, tmp_path, target_sheet_name=target_match)
+    except Exception:
+        pass
+
     return tmp_path
 
 
@@ -1242,9 +1342,14 @@ def export_excel_sheet_to_pdf(
                         pass
 
                 try:
+                    target_ws.Select()
                     target_ws.PageSetup.Zoom = False
                     target_ws.PageSetup.FitToPagesWide = 1
-                    target_ws.PageSetup.FitToPagesTall = False
+                    try:
+                        num_p = target_ws.HPageBreaks.Count + 1
+                    except Exception:
+                        num_p = 1
+                    target_ws.PageSetup.FitToPagesTall = max(1, num_p)
                 except Exception:
                     pass
 

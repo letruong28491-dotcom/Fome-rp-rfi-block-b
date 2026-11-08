@@ -26472,7 +26472,7 @@ def format_ppp_sheet(
 
 
 
-            c_c21.value = "Nguyễn Đức Sơn"
+            c_c21.value = None
 
 
 
@@ -29888,7 +29888,7 @@ def format_icr_sheet(
 
 
 
-            c_c22.value = "Nguyễn Đức Sơn"
+            c_c22.value = None
 
 
 
@@ -34360,194 +34360,51 @@ def format_standard_rp_header(
 
 
 
-        for col_idx, (f_vn, vn_text, f_en, en_text) in sig_hdrs.items():
-
-
-
-            cell = ws.cell(row=18 + offset, column=col_idx)
-
-
-
-            if not isinstance(cell, MergedCell):
-
-
-
-                cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
-
-
-
-                cell.alignment = align_center
-
-
-
-
-
-
-
-        # Row 19: Positions
-
-
-
-        pos_hdrs = {
-
-
-
-            1: (f9_r, "Chức danh/\n", f9_r, "Position"),
-
-
-
-            3: (f8_b, "Kỹ thuật thi công/\n", f8_i, "Construction Technician"),
-
-
-
-            6: (f8_b, "Giám sát thi công/\n", f8_i, "Construction Supervisor"),
-
-
-
-            9: (f8_b, "Đại diện Chủ đầu tư/\n", f8_i, "Company Representative"),
-
-
-
-        }
-
-
-
-        for col_idx, (f_vn, vn_text, f_en, en_text) in pos_hdrs.items():
-
-
-
-            cell = ws.cell(row=19 + offset, column=col_idx)
-
-
-
-            if not isinstance(cell, MergedCell):
-
-
-
-                cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
-
-
-
-                cell.alignment = align_center
-
-
-
-        c_ca_pos = ws.cell(row=19 + offset, column=13)
-
-
-
-        if not isinstance(c_ca_pos, MergedCell):
-
-
-
-            c_ca_pos.value = None
-
-
-
-
-
-
-
-        # Row 20: Chữ ký / Signature
-
-
-
-        sig_lbl = ws.cell(row=20 + offset, column=1)
-
-
-
-        if not isinstance(sig_lbl, MergedCell):
-
-
-
-            sig_lbl.value = CellRichText(TextBlock(f9_r, "Chữ ký/\n"), TextBlock(f9_r, "Signature"))
-
-
-
-            sig_lbl.alignment = align_center
-
-
+        if report_type != "FUR":
+            for col_idx, (f_vn, vn_text, f_en, en_text) in sig_hdrs.items():
+                cell = ws.cell(row=18 + offset, column=col_idx)
+                if not isinstance(cell, MergedCell):
+                    cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
+                    cell.alignment = align_center
+
+            # Row 19: Positions
+            pos_hdrs = {
+                1: (f9_r, "Chức danh/\n", f9_r, "Position"),
+                3: (f8_b, "Kỹ thuật thi công/\n", f8_i, "Construction Technician"),
+                6: (f8_b, "Giám sát thi công/\n", f8_i, "Construction Supervisor"),
+                9: (f8_b, "Đại diện Chủ đầu tư/\n", f8_i, "Company Representative"),
+            }
+            for col_idx, (f_vn, vn_text, f_en, en_text) in pos_hdrs.items():
+                cell = ws.cell(row=19 + offset, column=col_idx)
+                if not isinstance(cell, MergedCell):
+                    cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
+                    cell.alignment = align_center
+
+            c_ca_pos = ws.cell(row=19 + offset, column=13)
+            if not isinstance(c_ca_pos, MergedCell):
+                c_ca_pos.value = None
+
+            # Row 20: Chữ ký / Signature
+            sig_lbl = ws.cell(row=20 + offset, column=1)
+            if not isinstance(sig_lbl, MergedCell):
+                sig_lbl.value = CellRichText(TextBlock(f9_r, "Chữ ký/\n"), TextBlock(f9_r, "Signature"))
+                sig_lbl.alignment = align_center
+
+            # Row 21: Họ và tên / Full name
+            fn_lbl = ws.cell(row=21 + offset, column=1)
+            if not isinstance(fn_lbl, MergedCell):
+                fn_lbl.value = CellRichText(TextBlock(f9_r, "Họ và tên/\n"), TextBlock(f9_r, "Full name"))
+                fn_lbl.alignment = align_center
 
         for c_idx in [3, 6, 9, 13]:
-
-
-
             c_clr = ws.cell(row=20 + offset, column=c_idx)
-
-
-
             if not isinstance(c_clr, MergedCell):
-
-
-
                 c_clr.value = None
 
-
-
-
-
-
-
-        # Row 21: Họ và tên / Full name
-
-
-
-        fn_lbl = ws.cell(row=21 + offset, column=1)
-
-
-
-        if not isinstance(fn_lbl, MergedCell):
-
-
-
-            fn_lbl.value = CellRichText(TextBlock(f9_r, "Họ và tên/\n"), TextBlock(f9_r, "Full name"))
-
-
-
-            fn_lbl.alignment = align_center
-
-
-
-        for c_idx in [6, 9, 13]:
-
-
-
+        for c_idx in [3, 6, 9, 13]:
             c_clr = ws.cell(row=21 + offset, column=c_idx)
-
-
-
             if not isinstance(c_clr, MergedCell):
-
-
-
                 c_clr.value = None
-
-
-
-        c_epc_name = ws.cell(row=21 + offset, column=3)
-
-
-
-        if not isinstance(c_epc_name, MergedCell):
-
-
-
-            if not c_epc_name.value:
-
-
-
-                c_epc_name.value = "Nguyễn Đức Sơn"
-
-
-
-            c_epc_name.font = Font(name="Times New Roman", size=sz_body, bold=False, italic=False)
-
-
-
-            c_epc_name.alignment = align_center
-
-
-
 
 
 
@@ -36600,7 +36457,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-        if rep_type == "PPP" or report_type == "PPP":
+        if rep_type in {"PPP", "FUR"} or report_type in {"PPP", "FUR"}:
 
 
 
@@ -39577,7 +39434,7 @@ def generate_rp_workbook(
 
 
 
-        target_page_len = 31 if (report_type in {"CAI", "FTI", "HTI", "SPI"} or target_sheet.title == f"RP-{report_type}") else 24
+        target_page_len = 35 if report_type == "SPI" else (31 if (report_type in {"CAI", "FTI", "HTI"} or target_sheet.title == f"RP-{report_type}") else 24)
 
 
 
@@ -40219,7 +40076,7 @@ def generate_rp_workbook(
 
 
 
-                s_page_len = int(m.group(1)) if m else (31 if report_type in {"CAI", "FTI", "HTI", "SPI"} else sheet.max_row)
+                s_page_len = int(m.group(1)) if m else (35 if report_type == "SPI" else (31 if report_type in {"CAI", "FTI", "HTI"} else sheet.max_row))
 
 
 
@@ -40227,7 +40084,7 @@ def generate_rp_workbook(
 
 
 
-                s_page_len = 31 if (report_type in {"CAI", "FTI", "HTI", "SPI"} or s_name == f"RP-{report_type}") else sheet.max_row
+                s_page_len = 35 if report_type == "SPI" else (31 if (report_type in {"CAI", "FTI", "HTI"} or s_name == f"RP-{report_type}") else sheet.max_row)
 
 
 
@@ -40400,7 +40257,10 @@ def generate_rp_workbook(
 
 
 
-                                dst_cell.value = Translator(val, origin=src_cell.coordinate).translate_formula(dst_cell.coordinate)
+                                trans = Translator(val, origin=src_cell.coordinate).translate_formula(dst_cell.coordinate)
+                                if offset > 0 and j_row:
+                                    trans = re.sub(rf'([A-Za-z]+)\${j_row}\b', rf'\g<1>${j_row + offset}', trans)
+                                dst_cell.value = trans
 
 
 
@@ -40899,53 +40759,29 @@ def generate_rp_workbook(
 
                     sheet.print_options.verticalCentered = True
 
-
-
-                    if num_pages > 1:
-
-
-
-                        from openpyxl.worksheet.pagebreak import Break
-
-
-
-                        existing_breaks = {b.id for b in getattr(sheet.row_breaks, "brk", []) if hasattr(b, "id")}
-
-
-
-                        for p_brk in range(1, num_pages):
-
-
-
-                            brk_row = p_brk * s_page_len
-
-
-
-                            if brk_row not in existing_breaks:
-
-
-
-                                sheet.row_breaks.append(Break(id=brk_row))
-
-
-
                 elif sheet.print_area:
-
-
 
                     parts = sheet.print_area.split(":")
 
-
-
                     if len(parts) == 2:
-
-
 
                         last_part = re.sub(r'\d+$', str(s_page_len * (num_pages if s_name == target_sheet.title else 1)), parts[1])
 
-
-
                         sheet.print_area = f"{parts[0]}:{last_part}"
+
+                if num_pages > 1 and s_name == target_sheet.title:
+
+                    from openpyxl.worksheet.pagebreak import Break
+
+                    existing_breaks = {b.id for b in getattr(sheet.row_breaks, "brk", []) if hasattr(b, "id")}
+
+                    for p_brk in range(1, num_pages):
+
+                        brk_row = p_brk * s_page_len
+
+                        if brk_row not in existing_breaks:
+
+                            sheet.row_breaks.append(Break(id=brk_row))
 
 
 
