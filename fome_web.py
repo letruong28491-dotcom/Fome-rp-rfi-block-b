@@ -34814,15 +34814,11 @@ def format_standard_rp_header(
 
 
 
-                    if any(old in cell.value for old in ["Lê Quốc Đoàn", "Võ Xuân Duy", "Nguyễn Đức Sơn", "Lê Đình Trường"]):
+                    if any(old in cell.value for old in ["Lê Quốc Đoàn", "Võ Xuân Duy", "Nguyễn Đức Sơn", "Lê Đình Trường", "Nguyễn Văn Minh"]):
 
 
 
-
-
-
-
-                        cell.value = engineer_name
+                        cell.value = None
 
 
 
@@ -37240,11 +37236,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                            if not c_cell.value:
-
-
-
-                                c_cell.value = "Nguyễn Đức Sơn"
+                            c_cell.value = None
 
 
 
@@ -39493,39 +39485,7 @@ def generate_rp_workbook(
 
 
 
-    engineer_name_rp = (
-
-
-
-
-
-
-
-        "Nguyễn Đức Sơn"
-
-
-
-
-
-
-
-        if ("TTC15" in location.upper() or "T15" in location.upper())
-
-
-
-
-
-
-
-        else ((site_cfg.get("engineer_name") if site_cfg else None) or default_engineer_for_location(location))
-
-
-
-
-
-
-
-    )
+    engineer_name_rp = ""
 
 
 
@@ -41417,7 +41377,7 @@ def generate_rp_workbook(
 
 
 
-        engineer_name_rp = (
+        engineer_name_rp = ""
 
 
 
@@ -41425,47 +41385,8 @@ def generate_rp_workbook(
 
 
 
-            "Nguyễn Đức Sơn"
-
-
-
-
-
-
-
-            if ("TTC15" in location.upper() or "T15" in location.upper())
-
-
-
-
-
-
-
-            else ((site_cfg.get("engineer_name") if site_cfg else None) or default_engineer_for_location(location))
-
-
-
-
-
-
-
-        )
-
-
-
-
-
-
-
-        if engineer_name_rp and str(engineer_name_rp).strip():
-
-
-
-
-
-
-
-            target_sheet["D17"].value = str(engineer_name_rp).strip()
+        target_sheet["D17"].value = None
+        if False:
 
 
 
@@ -41673,39 +41594,7 @@ def generate_rp_workbook(
 
 
 
-        engineer_name_rp = (
-
-
-
-
-
-
-
-            "Nguyễn Đức Sơn"
-
-
-
-
-
-
-
-            if ("TTC15" in location.upper() or "T15" in location.upper())
-
-
-
-
-
-
-
-            else ((site_cfg.get("engineer_name") if site_cfg else None) or default_engineer_for_location(location))
-
-
-
-
-
-
-
-        )
+        engineer_name_rp = ""
 
 
 
@@ -44232,39 +44121,7 @@ def generate_rp_workbook(
 
 
 
-    engineer_name_rp = (
-
-
-
-
-
-
-
-        "Nguyễn Đức Sơn"
-
-
-
-
-
-
-
-        if ("TTC15" in location.upper() or "T15" in location.upper())
-
-
-
-
-
-
-
-        else ((site_cfg.get("engineer_name") if site_cfg else None) or default_engineer_for_location(location))
-
-
-
-
-
-
-
-    )
+    engineer_name_rp = ""
 
 
 
@@ -45686,6 +45543,18 @@ def generate_rp_workbook(
 
 
 
+    _known_eng_names = [
+        "Nguyễn Đức Sơn", "Duc Son", "Lê Đình Trường", "Lê Quốc Đoàn", 
+        "Võ Xuân Duy", "Nguyễn Lương Định", "Quốc Đoàn", "Xuân Duy", "Nguyễn Văn Minh"
+    ]
+    for _ws in workbook.worksheets:
+        for _r in range(12, min(_ws.max_row + 1, 65)):
+            for _c in range(1, min(_ws.max_column + 1, 15)):
+                _cell = _ws.cell(row=_r, column=_c)
+                if not isinstance(_cell, MergedCell) and isinstance(_cell.value, str):
+                    if any(nm in _cell.value for nm in _known_eng_names):
+                        _cell.value = None
+
     standardize_all_rp_titles_before_save(workbook, report_type, page_len=page_len, num_pages=num_pages, paged_sheet_title=target_sheet.title)
 
 
@@ -47031,6 +46900,8 @@ def generate_workbook(
 
 
     engineer_cell_updates: dict[tuple[str, str], str] = {}
+    for _s in workbook.sheetnames:
+        engineer_cell_updates[(_s, "C23")] = ""
 
 
 
@@ -47222,23 +47093,11 @@ def generate_workbook(
 
 
 
-                    if isinstance(curr_val, str) and ("Nguyễn Đức Sơn" in curr_val or "Lê Đình Trường" in curr_val):
+                    if isinstance(curr_val, str) and any(n in curr_val for n in ["Nguyễn Đức Sơn", "Lê Đình Trường", "Nguyễn Văn Minh", "Lê Quốc Đoàn", "Võ Xuân Duy"]):
 
 
 
-
-
-
-
-                        if engineer_name_rfi:
-
-
-
-
-
-
-
-                            engineer_cell_updates[(sheet.title, cell.coordinate)] = engineer_name_rfi
+                        engineer_cell_updates[(sheet.title, cell.coordinate)] = ""
 
 
 
