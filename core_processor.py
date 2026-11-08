@@ -597,7 +597,7 @@ def export_excel_sheet_via_libreoffice(
     # 1. Tách chỉ 1 sheet mục tiêu và thiết lập PageSetup chuẩn xác
     temp_excel = None
     try:
-        temp_excel = sanitize_and_repair_workbook(file_path, target_sheet=target_sheet)
+        temp_excel = sanitize_and_repair_workbook(file_path, target_sheet=target_sheet, orientation=orientation, is_rfi=is_rfi)
     except Exception:
         temp_excel = None
         
@@ -646,7 +646,12 @@ def export_excel_sheet_via_libreoffice(
     return False
 
 
-def sanitize_and_repair_workbook(file_path: str, target_sheet: Optional[str] = None) -> str:
+def sanitize_and_repair_workbook(
+    file_path: str,
+    target_sheet: Optional[str] = None,
+    orientation: Optional[int] = None,
+    is_rfi: bool = False
+) -> str:
     """
     Tự động chuẩn hóa và sửa lỗi cấu trúc Workbook bằng openpyxl khi Excel COM bị chặn:
     - Loại bỏ các vùng ô gộp (merged_cells) bị xung đột, trùng lặp hoặc đè lên nhau (nguyên nhân gây lỗi OLE Open failed).
@@ -690,6 +695,24 @@ def sanitize_and_repair_workbook(file_path: str, target_sheet: Optional[str] = N
                     for c in range(rng.min_col, rng.max_col + 1):
                         claimed.add((r, c))
                 ws.merged_cells.add(rng)
+
+        # Chuẩn hóa PageSetup cho in ấn / xuất PDF chuẩn A4 (đặc biệt cho LibreOffice headless)
+        try:
+            ws.page_setup.paperSize = ws.PAPERSIZE_A4
+            if orientation == 2:
+                ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+            elif orientation == 1:
+                ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+            elif not ws.page_setup.orientation:
+                ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+                
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            if not ws.page_setup.fitToWidth:
+                ws.page_setup.fitToWidth = 1
+            if ws.title == 'Bang_Doi_Chieu':
+                ws.page_setup.fitToHeight = 1
+        except Exception:
+            pass
 
     tmp_name = f"repaired_{uuid.uuid4().hex[:8]}_{os.path.basename(file_path)}"
     tmp_path = os.path.join(tempfile.gettempdir(), tmp_name)
@@ -1695,6 +1718,18 @@ def create_reconciliation_cover(
     col_widths = {1: 6, 2: 32, 3: 32, 4: 14, 5: 8, 6: 28, 7: 8, 8: 28, 9: 20, 10: 25}
     for col_idx, w in col_widths.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = w
+
+    # Cấu hình PageSetup khổ A4 ngang, căn chỉnh vừa vặn 1 trang chuẩn xuất PDF
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1 if len(reconcile_data) <= 15 else 0
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.3
+    ws.page_margins.bottom = 0.3
+    ws.print_area = f'A1:J{sig_row + 2}'
 
     wb.save(output_xlsx)
 
