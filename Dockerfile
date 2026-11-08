@@ -30,6 +30,8 @@ COPY . .
 # Thiết lập biến môi trường cho Cloud/Docker
 ENV FOME_WEB_HOST=0.0.0.0
 ENV PORT=8765
+ENV SAL_NO_JAVALDX=1
+ENV JAVA_HOME=""
 
 EXPOSE 8765
 

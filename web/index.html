@@ -4590,11 +4590,18 @@
           });
 
           if (!response.ok) {
-
-            const result = await response.json();
-
-            throw new Error(result.error || "Không tạo được Nhật ký thi công.");
-
+            let errText = "Không tạo được Nhật ký thi công.";
+            try {
+              const result = await response.json();
+              errText = result.error || errText;
+            } catch (_) {
+              if (response.status === 504 || response.status === 502) {
+                errText = "Máy chủ phản hồi chậm hoặc đang quá tải (502/504). Vui lòng thử lại.";
+              } else {
+                errText = `Lỗi hệ thống (${response.status}): Vui lòng thử lại.`;
+              }
+            }
+            throw new Error(errText);
           }
 
           const blob = await response.blob();
@@ -4694,11 +4701,18 @@
         });
 
         if (!response.ok) {
-
-          const result = await response.json();
-
-          throw new Error(result.error || "Không tạo được biểu mẫu.");
-
+          let errText = "Không tạo được biểu mẫu.";
+          try {
+            const result = await response.json();
+            errText = result.error || errText;
+          } catch (_) {
+            if (response.status === 504 || response.status === 502) {
+              errText = "Máy chủ phản hồi chậm hoặc đang quá tải (502/504). Vui lòng thử lại với ít bộ hồ sơ hơn.";
+            } else {
+              errText = `Lỗi hệ thống (${response.status}): Vui lòng thử lại.`;
+            }
+          }
+          throw new Error(errText);
         }
 
         const blob = await response.blob();
