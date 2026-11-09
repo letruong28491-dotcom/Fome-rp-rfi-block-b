@@ -13,6 +13,8 @@ import datetime
 import traceback
 import html
 import base64
+import zipfile
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Tuple, Set, Union
 
 import openpyxl
@@ -969,7 +971,7 @@ def safe_open_workbook(excel_app, file_path: str, read_only: bool = True, target
     return wb, None
 
 
-def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = False, fit_to_one_page: bool = False, custom_scale: float = None) -> str:
+def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = False, fit_to_one_page: bool = False, custom_scale: float = None, file_path: Optional[str] = None) -> str:
     """Chuyển đổi 1 worksheet openpyxl sang mã HTML giữ nguyên cấu trúc bảng, kiểu chữ, màu sắc và ô gộp."""
     max_r = ws.max_row or 1
     max_c = ws.max_column or 1
@@ -1016,17 +1018,96 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
                     skip_cells.add((r, c))
 
     image_map = {}
-    if hasattr(ws, '_images'):
+    if file_path and os.path.isfile(file_path):
+        try:
+            with zipfile.ZipFile(file_path, 'r') as z:
+                names = set(z.namelist())
+                target_sheet_xml = None
+                if 'xl/workbook.xml' in names and 'xl/_rels/workbook.xml.rels' in names:
+                    wb_root = ET.fromstring(z.read('xl/workbook.xml'))
+                    wb_rels = ET.fromstring(z.read('xl/_rels/workbook.xml.rels'))
+                    rel_map = {r.attrib['Id']: r.attrib['Target'] for r in wb_rels}
+                    for s in wb_root.findall('.//{*}sheet'):
+                        if s.attrib.get('name', '').strip().lower() == ws.title.strip().lower():
+                            r_id = s.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                            tgt = rel_map.get(r_id, '')
+                            target_sheet_xml = os.path.normpath(os.path.join('xl', tgt)).replace(os.sep, '/')
+                            break
+                
+                target_drawing_xml = None
+                if target_sheet_xml:
+                    s_dir = os.path.dirname(target_sheet_xml)
+                    s_base = os.path.basename(target_sheet_xml)
+                    s_rels_file = f'{s_dir}/_rels/{s_base}.rels'
+                    if s_rels_file in names:
+                        s_rels_root = ET.fromstring(z.read(s_rels_file))
+                        for rel in s_rels_root:
+                            r_type = rel.attrib.get('Type', '')
+                            if r_type.endswith('/drawing'):
+                                tgt = rel.attrib.get('Target', '')
+                                target_drawing_xml = os.path.normpath(os.path.join(s_dir, tgt)).replace(os.sep, '/')
+                                break
+                
+                if target_drawing_xml and target_drawing_xml in names:
+                    drw_files = [target_drawing_xml]
+                else:
+                    drw_files = [n for n in names if n.startswith('xl/drawings/drawing') and n.endswith('.xml')]
+                for df in drw_files:
+                    base = os.path.basename(df)
+                    rels_file = f'xl/drawings/_rels/{base}.rels'
+                    rel_map = {}
+                    if rels_file in names:
+                        rels_root = ET.fromstring(z.read(rels_file))
+                        for rel in rels_root:
+                            r_id = rel.attrib.get('Id')
+                            tgt = rel.attrib.get('Target', '')
+                            clean_tgt = tgt.lstrip('/')
+                            if clean_tgt.startswith('xl/'):
+                                rel_map[r_id] = clean_tgt
+                            else:
+                                rel_map[r_id] = os.path.normpath(os.path.join('xl/drawings', tgt)).replace(os.sep, '/').lstrip('/')
+                    
+                    drw_root = ET.fromstring(z.read(df))
+                    for anchor in drw_root:
+                        tag = anchor.tag.split('}')[-1]
+                        if tag in ('twoCellAnchor', 'oneCellAnchor'):
+                            from_el = anchor.find('{*}from')
+                            if from_el is not None:
+                                c_el = from_el.find('{*}col')
+                                r_el = from_el.find('{*}row')
+                                if c_el is not None and r_el is not None:
+                                    r_idx = int(r_el.text) + 1
+                                    c_idx = int(c_el.text) + 1
+                                    for rng in ws.merged_cells.ranges:
+                                        if rng.min_row <= r_idx <= rng.max_row and rng.min_col <= c_idx <= rng.max_col:
+                                            r_idx, c_idx = rng.min_row, rng.min_col
+                                            break
+                                    for pic in anchor.findall('.//{*}pic'):
+                                        blip = pic.find('.//{*}blip')
+                                        if blip is not None:
+                                            embed = blip.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                                            tgt_path = rel_map.get(embed)
+                                            if tgt_path and tgt_path in names:
+                                                b64 = base64.b64encode(z.read(tgt_path)).decode('ascii')
+                                                image_map.setdefault((r_idx, c_idx), []).append(b64)
+        except Exception:
+            pass
+
+    if not image_map and hasattr(ws, '_images'):
         for img in ws._images:
             try:
                 anc = getattr(img, 'anchor', None)
                 if anc and hasattr(anc, '_from'):
                     img_r = anc._from.row + 1
                     img_c = anc._from.col + 1
+                    for rng in ws.merged_cells.ranges:
+                        if rng.min_row <= img_r <= rng.max_row and rng.min_col <= img_c <= rng.max_col:
+                            img_r, img_c = rng.min_row, rng.min_col
+                            break
                     raw_bytes = img._data()
                     if raw_bytes:
                         b64_str = base64.b64encode(raw_bytes).decode('ascii')
-                        image_map[(img_r, img_c)] = b64_str
+                        image_map.setdefault((img_r, img_c), []).append(b64_str)
             except Exception:
                 pass
 
@@ -1174,14 +1255,45 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
             val = cell.value
             cell_content = ""
             if (r, c) in image_map:
-                b64 = image_map[(r, c)]
-                cell_content += f"<img src='data:image/png;base64,{b64}' style='max-height: 100%; max-width: 100%; object-fit: contain; display: block; margin: auto;'>"
+                imgs_b64 = image_map[(r, c)]
+                if len(imgs_b64) > 1:
+                    h = max(16, int(20 * scale_factor))
+                    img_tags = "".join(f"<img src='data:image/png;base64,{b64}' height='{h}' style='height: {h}px; vertical-align: middle; margin: 0 2px; display: inline-block;'>" for b64 in imgs_b64)
+                else:
+                    h = max(22, int(32 * scale_factor))
+                    img_tags = f"<img src='data:image/png;base64,{imgs_b64[0]}' height='{h}' style='height: {h}px; vertical-align: middle; margin: 0 1px; display: inline-block;'>"
+                cell_content += f"<div style='text-align: center; white-space: nowrap;'>{img_tags}</div>"
 
             if val is not None:
-                if isinstance(val, (datetime.datetime, datetime.date)):
+                if hasattr(val, '__iter__') and not isinstance(val, (str, bytes)):
+                    parts = []
+                    for block in val:
+                        txt = getattr(block, 'text', str(block))
+                        txt_esc = html.escape(txt).replace('\n', '<br>')
+                        f = getattr(block, 'font', None)
+                        b = getattr(f, 'b', False)
+                        i = getattr(f, 'i', False)
+                        if b and i:
+                            parts.append(f"<b><i>{txt_esc}</i></b>")
+                        elif b:
+                            parts.append(f"<b>{txt_esc}</b>")
+                        elif i:
+                            parts.append(f"<i>{txt_esc}</i>")
+                        else:
+                            parts.append(txt_esc)
+                    val_str = "".join(parts)
+                elif isinstance(val, (datetime.datetime, datetime.date)):
                     val_str = val.strftime('%d/%m/%Y')
                 else:
-                    val_str = html.escape(str(val)).replace('\n', '<br>')
+                    str_v = str(val)
+                    if '\n' in str_v and any(k in str_v for k in ["TỔNG THẦU", "GIÁM SÁT", "CHỦ ĐẦU TƯ", "TƯ VẤN ĐĂNG KIỂM", "Kỹ thuật thi công", "Giám sát thi công", "Đại diện Chủ đầu tư"]):
+                        lines_s = str_v.split('\n', 1)
+                        val_str = f"<b>{html.escape(lines_s[0])}</b><br><i>{html.escape(lines_s[1])}</i>"
+                    elif '\n' in str_v and any(k in str_v for k in ["Kiểm tra", "Chức danh", "Chữ ký", "Họ và tên"]):
+                        lines_s = str_v.split('\n', 1)
+                        val_str = f"{html.escape(lines_s[0])}<br><i>{html.escape(lines_s[1])}</i>"
+                    else:
+                        val_str = html.escape(str_v).replace('\n', '<br>')
                 if cell_content:
                     cell_content += f"<br>{val_str}"
                 else:
@@ -1244,7 +1356,7 @@ def export_sheet_via_pymupdf(file_path: str, sheet_name: str, output_pdf: str, o
 
         fit_to_one = detected_rfi or is_cover
 
-        html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, fit_to_one_page=fit_to_one)
+        html_content = openpyxl_sheet_to_html(target_ws, orientation=ori_str, is_rfi=detected_rfi, fit_to_one_page=fit_to_one, file_path=file_path)
         
         with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as tf:
             tf.write(html_content)

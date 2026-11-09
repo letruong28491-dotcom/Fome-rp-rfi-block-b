@@ -24469,41 +24469,47 @@ def normalize_sheet_fonts_and_signature(ws, engineer_name: str = "", max_row_lim
 
 
         if "Đại diện các bên" in val or "Representatives of the parties" in val:
-
-
-
-            cell.font = _get_black_font(cell.font, bold=True, italic=False)
-
-
-
+            cell.font = _get_black_font(cell.font, bold=False, italic=True)
         elif r >= 10 and any(k in val for k in ["TỔNG THẦU", "GIÁM SÁT THI CÔNG", "CHỦ ĐẦU TƯ", "TƯ VẤN ĐĂNG KIỂM"]):
-
-
-
-            cell.font = _get_black_font(cell.font, bold=True, italic=False)
-
-
-
+            lines = val.split("\n", 1)
+            if len(lines) == 2:
+                sz = cell.font.size if (cell.font and cell.font.size) else 9
+                f_b = InlineFont(rFont="Times New Roman", sz=sz, b=True, i=False)
+                f_i = InlineFont(rFont="Times New Roman", sz=sz, b=False, i=True)
+                cell.value = CellRichText(
+                    TextBlock(f_b, lines[0] + "\n"),
+                    TextBlock(f_i, lines[1])
+                )
+                cell.font = _get_black_font(cell.font, bold=False, italic=False)
+            else:
+                cell.font = _get_black_font(cell.font, bold=True, italic=False)
         elif any(k in val for k in ["Kỹ thuật thi công", "Giám sát thi công", "Đại diện Chủ đầu tư", "Đại diện chủ đầu tư", "Company Representative"]):
-
-
-
-            cell.font = _get_black_font(cell.font, bold=True, italic=False)
-
-
-
+            lines = val.split("\n", 1)
+            if len(lines) == 2:
+                sz = cell.font.size if (cell.font and cell.font.size) else 8
+                f_b = InlineFont(rFont="Times New Roman", sz=sz, b=True, i=False)
+                f_i = InlineFont(rFont="Times New Roman", sz=sz, b=False, i=True)
+                cell.value = CellRichText(
+                    TextBlock(f_b, lines[0] + "\n"),
+                    TextBlock(f_i, lines[1])
+                )
+                cell.font = _get_black_font(cell.font, bold=False, italic=False)
+            else:
+                cell.font = _get_black_font(cell.font, bold=True, italic=False)
         elif any(k in val for k in ["Kiểm tra/", "Kiểm Tra/", "Chức danh/", "Chữ ký", "Họ và tên"]):
-
-
-
-            cell.font = _get_black_font(cell.font, bold=False, italic=False)
-
-
-
+            lines = val.split("\n", 1)
+            if len(lines) == 2:
+                sz = cell.font.size if (cell.font and cell.font.size) else 9
+                f_r = InlineFont(rFont="Times New Roman", sz=sz, b=False, i=False)
+                f_i = InlineFont(rFont="Times New Roman", sz=sz, b=False, i=True)
+                cell.value = CellRichText(
+                    TextBlock(f_r, lines[0] + "\n"),
+                    TextBlock(f_i, lines[1])
+                )
+                cell.font = _get_black_font(cell.font, bold=False, italic=False)
+            else:
+                cell.font = _get_black_font(cell.font, bold=False, italic=False)
         elif any(nm in val for nm in ["Nguyễn Đức", "Duc Son", "Lê Đình Trường", "Lê Quốc Đoàn", "Võ Xuân Duy", "Nguyễn Lương Định", "Quốc Đoàn", "Xuân Duy"]):
-
-
-
             cell.font = _get_black_font(cell.font, bold=False, italic=False)
 
 
@@ -34305,71 +34311,30 @@ def format_standard_rp_header(
 
 
         # Row 18: Signatures table headers
-
-
-
-
-
-
-
         f8_i = InlineFont(rFont="Times New Roman", sz=8.0, b=False, i=True)
-
-
-
+        f9_i = InlineFont(rFont="Times New Roman", sz=9.0, b=False, i=True)
         if report_type in {"VSR", "FUR", "MTR", "ICR"}:
-
-
-
             ibst_hdr = (f9_b, "GIÁM SÁT THI CÔNG IBST/S\n", f8_i, "IBST/S CONSTRUCTION SUPERVISOR")
-
-
-
         else:
-
-
-
-            ibst_hdr = (f9_b, "GIÁM SÁT THI CÔNG IBST/S/\n", f8_r, "IBST/S CONSTRUCTION\nSUPERVISOR")
-
-
-
+            ibst_hdr = (f9_b, "GIÁM SÁT THI CÔNG IBST/S/\n", f8_i, "IBST/S CONSTRUCTION\nSUPERVISOR")
         sig_hdrs = {
-
-
-
-            1: (f9_r, "Kiểm tra/\n", f9_r, "Inspection"),
-
-
-
-            3: (f9_b, "TỔNG THẦU EPC - PTSCL18/\n", f9_r, "EPC CONTRACTOR – PTSCL18"),
-
-
-
+            1: (f9_r, "Kiểm tra/\n", f9_i, "Inspection"),
+            3: (f9_b, "TỔNG THẦU EPC - PTSCL18/\n", f8_i, "EPC CONTRACTOR – PTSCL18"),
             6: ibst_hdr,
-
-
-
-            9: (f9_b, "CHỦ ĐẦU TƯ-SWPOC/\n", f9_r, "COMPANY-SWPOC"),
-
-
-
-            13: (f9_b, "TƯ VẤN ĐĂNG KIỂM/\n", f9_r, "CA"),
-
-
-
+            9: (f9_b, "CHỦ ĐẦU TƯ-SWPOC/\n", f8_i, "COMPANY-SWPOC"),
+            13: (f9_b, "TƯ VẤN ĐĂNG KIỂM/\n", f8_i, "CA"),
         }
-
-
-
         if report_type != "FUR":
             for col_idx, (f_vn, vn_text, f_en, en_text) in sig_hdrs.items():
                 cell = ws.cell(row=18 + offset, column=col_idx)
                 if not isinstance(cell, MergedCell):
                     cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
+                    cell.font = font_reg_9
                     cell.alignment = align_center
 
             # Row 19: Positions
             pos_hdrs = {
-                1: (f9_r, "Chức danh/\n", f9_r, "Position"),
+                1: (f9_r, "Chức danh/\n", f9_i, "Position"),
                 3: (f8_b, "Kỹ thuật thi công/\n", f8_i, "Construction Technician"),
                 6: (f8_b, "Giám sát thi công/\n", f8_i, "Construction Supervisor"),
                 9: (f8_b, "Đại diện Chủ đầu tư/\n", f8_i, "Company Representative"),
@@ -34378,6 +34343,7 @@ def format_standard_rp_header(
                 cell = ws.cell(row=19 + offset, column=col_idx)
                 if not isinstance(cell, MergedCell):
                     cell.value = CellRichText(TextBlock(f_vn, vn_text), TextBlock(f_en, en_text))
+                    cell.font = font_reg_9
                     cell.alignment = align_center
 
             c_ca_pos = ws.cell(row=19 + offset, column=13)
@@ -34387,13 +34353,15 @@ def format_standard_rp_header(
             # Row 20: Chữ ký / Signature
             sig_lbl = ws.cell(row=20 + offset, column=1)
             if not isinstance(sig_lbl, MergedCell):
-                sig_lbl.value = CellRichText(TextBlock(f9_r, "Chữ ký/\n"), TextBlock(f9_r, "Signature"))
+                sig_lbl.value = CellRichText(TextBlock(f9_r, "Chữ ký/\n"), TextBlock(f9_i, "Signature"))
+                sig_lbl.font = font_reg_9
                 sig_lbl.alignment = align_center
 
             # Row 21: Họ và tên / Full name
             fn_lbl = ws.cell(row=21 + offset, column=1)
             if not isinstance(fn_lbl, MergedCell):
-                fn_lbl.value = CellRichText(TextBlock(f9_r, "Họ và tên/\n"), TextBlock(f9_r, "Full name"))
+                fn_lbl.value = CellRichText(TextBlock(f9_r, "Họ và tên/\n"), TextBlock(f9_i, "Full name"))
+                fn_lbl.font = font_reg_9
                 fn_lbl.alignment = align_center
 
         for c_idx in [3, 6, 9, 13]:
@@ -34405,9 +34373,6 @@ def format_standard_rp_header(
             c_clr = ws.cell(row=21 + offset, column=c_idx)
             if not isinstance(c_clr, MergedCell):
                 c_clr.value = None
-
-
-
 
         # Row 22: Note
 
@@ -36529,67 +36494,22 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-        v_kiemtra = CellRichText(TextBlock(f_r, "Kiểm tra/\n"), TextBlock(f_r, "Inspection"))
-
-
-
-        v_epc = CellRichText(TextBlock(f_b, "TỔNG THẦU EPC - PTSCL18/\n"), TextBlock(f_r, "EPC CONTRACTOR – PTSCL18"))
-
-
-
+        v_kiemtra = CellRichText(TextBlock(f_r, "Kiểm tra/\n"), TextBlock(f_i, "Inspection"))
+        v_epc = CellRichText(TextBlock(f_b, "TỔNG THẦU EPC - PTSCL18/\n"), TextBlock(f_i, "EPC CONTRACTOR – PTSCL18"))
         if report_type in {"VSR", "FUR", "MTR", "ICR"} or rep_type in {"VSR", "FUR", "MTR", "ICR"}:
-
-
-
             v_ibst = CellRichText(TextBlock(f_b, "GIÁM SÁT THI CÔNG IBST/S\n"), TextBlock(f_i, "IBST/S CONSTRUCTION SUPERVISOR"))
-
-
-
         else:
+            v_ibst = CellRichText(TextBlock(f_b, "GIÁM SÁT THI CÔNG IBST/S/\n"), TextBlock(f_i, "IBST/S CONSTRUCTION\nSUPERVISOR"))
+        v_swpoc = CellRichText(TextBlock(f_b, "CHỦ ĐẦU TƯ-SWPOC/\n"), TextBlock(f_i, "COMPANY-SWPOC"))
+        v_ca = CellRichText(TextBlock(f_b, "TƯ VẤN ĐĂNG KIỂM/\n"), TextBlock(f_i, "CA"))
 
-
-
-            v_ibst = CellRichText(TextBlock(f_b, "GIÁM SÁT THI CÔNG IBST/S/\n"), TextBlock(f_r, "IBST/S CONSTRUCTION\nSUPERVISOR"))
-
-
-
-        v_swpoc = CellRichText(TextBlock(f_b, "CHỦ ĐẦU TƯ-SWPOC/\n"), TextBlock(f_r, "COMPANY-SWPOC"))
-
-
-
-        v_ca = CellRichText(TextBlock(f_b, "TƯ VẤN ĐĂNG KIỂM/\n"), TextBlock(f_r, "CA"))
-
-
-
-
-
-
-
-        v_chucdanh = CellRichText(TextBlock(f_r, "Chức danh/\n"), TextBlock(f_r, "Position"))
-
-
-
+        v_chucdanh = CellRichText(TextBlock(f_r, "Chức danh/\n"), TextBlock(f_i, "Position"))
         v_pos_epc = CellRichText(TextBlock(f_b, "Kỹ thuật thi công/\n"), TextBlock(f_i, "Construction Technician"))
-
-
-
         v_pos_ibst = CellRichText(TextBlock(f_b, "Giám sát thi công/\n"), TextBlock(f_i, "Construction Supervisor"))
-
-
-
         v_pos_swpoc = CellRichText(TextBlock(f_b, "Đại diện Chủ đầu tư/\n"), TextBlock(f_i, "Company Representative"))
 
-
-
-
-
-
-
-        v_chuky = CellRichText(TextBlock(f_r, "Chữ ký/\n"), TextBlock(f_r, "Signature"))
-
-
-
-        v_hovaten = CellRichText(TextBlock(f_r, "Họ và tên/\n"), TextBlock(f_r, "Full name"))
+        v_chuky = CellRichText(TextBlock(f_r, "Chữ ký/\n"), TextBlock(f_i, "Signature"))
+        v_hovaten = CellRichText(TextBlock(f_r, "Họ và tên/\n"), TextBlock(f_i, "Full name"))
 
 
 
@@ -36769,7 +36689,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                        cell_pt.font = cell_font_b
+                        cell_pt.font = cell_font_r
 
 
 
@@ -36789,7 +36709,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                        cell_pt.font = cell_font_b
+                        cell_pt.font = cell_font_r
 
 
 
@@ -36809,7 +36729,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                        cell_pt.font = cell_font_b
+                        cell_pt.font = cell_font_r
 
 
 
@@ -36829,7 +36749,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                        cell_pt.font = cell_font_b
+                        cell_pt.font = cell_font_r
 
 
 
