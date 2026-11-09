@@ -80,6 +80,32 @@ def extract_seq_number(name: str) -> int:
     return int(digits[-1]) if digits else 0
 
 
+def get_rp_report_sheets(wb_or_path) -> List[str]:
+    """
+    Trả về danh sách tất cả các sheet báo cáo cần xuất ra PDF,
+    bỏ qua các sheet dữ liệu nội bộ (Controlog, Log, Pipe).
+    Ví dụ:
+    - RP-SPI -> ['RP-SPI', '0001-1']
+    - RP-FTI -> ['RP-FTI', '0001-1']
+    - RP-FUR -> ['RP-FUR']
+    """
+    if isinstance(wb_or_path, openpyxl.Workbook):
+        sheet_names = wb_or_path.sheetnames
+    else:
+        wb = openpyxl.load_workbook(wb_or_path, read_only=True, data_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+        
+    report_sheets = []
+    for s in sheet_names:
+        uname = s.upper()
+        if 'CONTROL' in uname or 'LOG' in uname or 'PIPE' in uname:
+            continue
+        report_sheets.append(s)
+        
+    return report_sheets if report_sheets else [sheet_names[0]]
+
+
 def parse_rp_excel(file_path: str) -> Dict:
     """
     Đọc thông tin từ file Báo cáo kiểm tra (RP Excel):
@@ -90,28 +116,8 @@ def parse_rp_excel(file_path: str) -> Dict:
     - Tên Sheet chứa báo cáo RP
     """
     wb = openpyxl.load_workbook(file_path, data_only=True)
-    
-    target_sheet_name = None
-    # Ưu tiên sheet báo cáo (bắt đầu bằng RP hoặc chứa mã loại), bỏ qua các sheet Control/Log
-    for name in wb.sheetnames:
-        uname = name.upper()
-        if 'CONTROL' in uname or 'LOG' in uname:
-            continue
-        if uname.startswith('RP') or 'RP-' in uname:
-            target_sheet_name = name
-            break
-            
-    if not target_sheet_name:
-        for name in wb.sheetnames:
-            uname = name.upper()
-            if 'CONTROL' in uname or 'LOG' in uname:
-                continue
-            target_sheet_name = name
-            break
-            
-    if not target_sheet_name:
-        target_sheet_name = wb.sheetnames[0]
-        
+    report_sheets = get_rp_report_sheets(wb)
+    target_sheet_name = report_sheets[0]
     ws = wb[target_sheet_name]
     
     report_no = None
@@ -299,10 +305,30 @@ def parse_rp_excel(file_path: str) -> Dict:
                                 if p and p not in joints:
                                     joints.append(p)
                                 
+    drawing_sheet_nums = []
     if weld_map_no:
-        m = re.search(r'(?:SHT|SHEET)\s*(\d+)(?:\s*/\s*(\d+))?', weld_map_no, re.IGNORECASE)
+        m = re.search(r'(?:SHT|SHEET)\s*([0-9,\s\-&]+?)(?:/\s*\d+|$)', weld_map_no, re.IGNORECASE)
         if m:
-            drawing_sheet_num = m.group(1)
+            raw_shts = m.group(1)
+            parts = re.split(r'[,&]', raw_shts)
+            for part in parts:
+                part = part.strip()
+                if '-' in part:
+                    rm = re.match(r'(\d+)\s*-\s*(\d+)', part)
+                    if rm:
+                        start_s, end_s = int(rm.group(1)), int(rm.group(2))
+                        for sn in range(start_s, end_s + 1):
+                            drawing_sheet_nums.append(str(sn))
+                else:
+                    dm = re.search(r'\d+', part)
+                    if dm:
+                        drawing_sheet_nums.append(dm.group(0))
+        if not drawing_sheet_nums:
+            m_single = re.search(r'(?:SHT|SHEET)\s*(\d+)', weld_map_no, re.IGNORECASE)
+            if m_single:
+                drawing_sheet_nums.append(m_single.group(1))
+
+    drawing_sheet_num = drawing_sheet_nums[0] if drawing_sheet_nums else None
 
     if not report_no:
         base = os.path.splitext(os.path.basename(file_path))[0]
@@ -311,10 +337,12 @@ def parse_rp_excel(file_path: str) -> Dict:
     return {
         'file_path': file_path,
         'sheet_name': target_sheet_name,
+        'sheet_names': report_sheets,
         'report_no': report_no,
         'rfi_no': rfi_no,
         'weld_map_no': weld_map_no,
         'drawing_sheet_num': drawing_sheet_num,
+        'drawing_sheet_nums': drawing_sheet_nums,
         'joints': joints,
         'pipes': pipes if is_ppp else [],
         'is_icr': is_icr,
@@ -1000,20 +1028,32 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
     max_r = max(actual_max_r, 1)
     max_c = max(actual_max_c, 1)
 
+    # Giới hạn số cột theo vùng in (Print Area) nếu có để tránh tràn các cột tính toán/nháp phụ
+    if ws.print_area:
+        try:
+            pa_str = str(ws.print_area[0] if isinstance(ws.print_area, (list, tuple)) else ws.print_area)
+            pa_clean = pa_str.split('!')[-1].replace('$', '')
+            if ':' in pa_clean:
+                _, c2 = pa_clean.split(':')
+                pa_c = openpyxl.utils.column_index_from_string(''.join([ch for ch in c2 if ch.isalpha()]))
+                if pa_c and pa_c > 0:
+                    max_c = min(max_c, pa_c)
+        except Exception:
+            pass
+
     merged_map = {}
     skip_cells = set()
     for rng in ws.merged_cells.ranges:
-        if rng.min_row <= max_r and rng.min_col <= max_c:
-            if rng.max_row > max_r:
-                max_r = rng.max_row
-            if rng.max_col > max_c:
-                max_c = rng.max_col
         min_col, min_row, max_col, max_row = rng.min_col, rng.min_row, rng.max_col, rng.max_row
-        rowspan = max_row - min_row + 1
-        colspan = max_col - min_col + 1
+        if min_col > max_c or min_row > max_r:
+            continue
+        max_col_clamped = min(max_col, max_c)
+        max_row_clamped = min(max_row, max_r)
+        rowspan = max_row_clamped - min_row + 1
+        colspan = max_col_clamped - min_col + 1
         merged_map[(min_row, min_col)] = (rowspan, colspan)
-        for r in range(min_row, max_row + 1):
-            for c in range(min_col, max_col + 1):
+        for r in range(min_row, max_row_clamped + 1):
+            for c in range(min_col, max_col_clamped + 1):
                 if (r, c) != (min_row, min_col):
                     skip_cells.add((r, c))
 
@@ -1031,7 +1071,7 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
                         if s.attrib.get('name', '').strip().lower() == ws.title.strip().lower():
                             r_id = s.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
                             tgt = rel_map.get(r_id, '')
-                            target_sheet_xml = os.path.normpath(os.path.join('xl', tgt)).replace(os.sep, '/')
+                            target_sheet_xml = os.path.normpath(os.path.join('xl', tgt.lstrip('/'))).replace(os.sep, '/')
                             break
                 
                 target_drawing_xml = None
@@ -1045,7 +1085,7 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
                             r_type = rel.attrib.get('Type', '')
                             if r_type.endswith('/drawing'):
                                 tgt = rel.attrib.get('Target', '')
-                                target_drawing_xml = os.path.normpath(os.path.join(s_dir, tgt)).replace(os.sep, '/')
+                                target_drawing_xml = os.path.normpath(os.path.join(s_dir, tgt.lstrip('/'))).replace(os.sep, '/')
                                 break
                 
                 if target_drawing_xml and target_drawing_xml in names:
@@ -1111,43 +1151,56 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
             except Exception:
                 pass
 
+    def _resolve_col_w(ws, c_idx):
+        c_let = get_column_letter(c_idx)
+        dim = ws.column_dimensions.get(c_let)
+        if dim and dim.width:
+            return float(dim.width)
+        for k, v in ws.column_dimensions.items():
+            if v.min is not None and v.max is not None:
+                if v.min <= c_idx <= v.max and v.width:
+                    return float(v.width)
+        def_w = getattr(ws.sheet_format, 'defaultColWidth', None)
+        return float(def_w) if def_w else 8.8
+
     col_widths = []
     total_w = 0.0
     for col_idx in range(1, max_c + 1):
-        col_letter = get_column_letter(col_idx)
-        dim = ws.column_dimensions.get(col_letter)
-        w = dim.width if (dim and dim.width) else 10.0
-        w = max(float(w), 2.0)
+        w = _resolve_col_w(ws, col_idx)
+        w = max(float(w), 1.0)
         col_widths.append(w)
         total_w += w
 
+    ps_scale = getattr(ws.page_setup, 'scale', None)
+    total_row_height = sum(ws.row_dimensions[r].height or 18.0 for r in range(1, max_r + 1))
     if custom_scale is not None:
         scale_factor = custom_scale
-    else:
-        total_row_height = sum(ws.row_dimensions[r].height or 18.0 for r in range(1, max_r + 1))
+    elif fit_to_one_page or is_rfi:
         scale_factor = 1.0
-        if fit_to_one_page or is_rfi:
-            if total_row_height > 460.0:
-                scale_factor = min(1.0, 460.0 / total_row_height)
-                if scale_factor < 0.68:
-                    scale_factor = 0.68
-        elif orientation == "portrait" and fit_to_one_page:
-            if total_row_height > 720.0:
-                scale_factor = min(1.0, 720.0 / total_row_height)
-                if scale_factor < 0.68:
-                    scale_factor = 0.68
+        limit_h = 720.0 if orientation == "portrait" else 460.0
+        if total_row_height > limit_h:
+            scale_factor = min(1.0, limit_h / total_row_height)
+            if scale_factor < 0.68:
+                scale_factor = 0.68
+    elif custom_scale is not None:
+        scale_factor = custom_scale
+    elif ps_scale and ps_scale > 0:
+        # Áp dụng tỉ lệ in chuẩn của Excel, nhân hệ số 0.90 để bù trừ padding và line-height khi render HTML
+        scale_factor = (float(ps_scale) / 100.0) * 0.90
+    else:
+        scale_factor = 1.0
 
     page_css = "A4 landscape" if orientation == "landscape" else "A4 portrait"
-    margin_css = "4mm" if (fit_to_one_page or is_rfi) else "8mm"
+    margin_css = "4mm"
 
     html_lines = [
         "<!DOCTYPE html>",
         "<html><head><meta charset='utf-8'>",
         "<style>",
         f"  @page {{ size: {page_css}; margin: {margin_css}; }}",
-        "  body { font-family: 'Times New Roman', Arial, sans-serif; margin: 0; padding: 0; background: white; line-height: 1.15; }",
+        "  body { font-family: 'Times New Roman', Arial, sans-serif; margin: 0; padding: 0; background: white; line-height: 1.05; }",
         "  table { border-collapse: collapse; table-layout: fixed; width: 100%; border-spacing: 0; }",
-        "  td { box-sizing: border-box; overflow: hidden; word-break: break-word; }",
+        "  td { box-sizing: border-box; overflow: hidden; white-space: nowrap; }",
         "</style></head><body>",
         "<table>",
         "<colgroup>"
@@ -1183,10 +1236,18 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
         col = color_to_hex(b.color) or "#333333"
         return f"{w} solid {col}"
 
+    row_breaks = set()
+    if hasattr(ws, 'row_breaks') and hasattr(ws.row_breaks, 'brk'):
+        for b in ws.row_breaks.brk:
+            if hasattr(b, 'id') and b.id:
+                row_breaks.add(b.id)
+
     for r in range(1, max_r + 1):
         row_dim = ws.row_dimensions.get(r)
         r_height = f"height: {row_dim.height * scale_factor:.1f}pt;" if (row_dim and row_dim.height) else ""
-        html_lines.append(f"<tr style='{r_height}'>")
+        break_style = "page-break-after: always; break-after: page;" if r in row_breaks else ""
+        tr_style = f"{r_height} {break_style}".strip()
+        html_lines.append(f"<tr style='{tr_style}'>")
 
         for c in range(1, max_c + 1):
             if (r, c) in skip_cells:
@@ -1220,6 +1281,8 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
                     styles.append(f"color: {fc};")
             styles.append(f"font-size: {f_size * scale_factor:.1f}pt;")
 
+            if cell.alignment and cell.alignment.wrap_text:
+                styles.append("white-space: normal; word-break: break-word;")
             if cell.alignment:
                 h_align = cell.alignment.horizontal or "left"
                 if h_align in ("center", "centre"):
@@ -1249,7 +1312,7 @@ def openpyxl_sheet_to_html(ws, orientation: str = "landscape", is_rfi: bool = Fa
                 if b_left != "none": styles.append(f"border-left: {b_left};")
                 if b_right != "none": styles.append(f"border-right: {b_right};")
 
-            pad = "1px 2px" if (fit_to_one_page or is_rfi) else "2px 4px"
+            pad = "1px 2px"
             styles.append(f"padding: {pad};")
 
             val = cell.value
@@ -1961,13 +2024,13 @@ def create_reconciliation_cover(
             count_rp = item['count_rp'] if not only_rfi else '-'
             count_rfi = item.get('count_rfi', 1)
         elif only_rfi:
-            sheet_str = f"Sheet {item['sheet_num']}" if item.get('sheet_num') else 'Tự động'
+            sheet_str = f"Sheet {', '.join(item['sheet_nums'])}" if item.get('sheet_nums') else (f"Sheet {item['sheet_num']}" if item.get('sheet_num') else 'Tự động')
             detail_rp = 'Không có (Chỉ RFI)'
             detail_rfi = ', '.join(item['joints_rfi']) if item['joints_rfi'] else '-'
             count_rp = '-'
             count_rfi = item['count_rfi']
         else:
-            sheet_str = f"Sheet {item['sheet_num']}" if item.get('sheet_num') else 'Tự động'
+            sheet_str = f"Sheet {', '.join(item['sheet_nums'])}" if item.get('sheet_nums') else (f"Sheet {item['sheet_num']}" if item.get('sheet_num') else 'Tự động')
             detail_rp = ', '.join(item['joints_rp'])
             detail_rfi = ', '.join(item['joints_rfi'])
             count_rp = len(item['joints_rp'])
@@ -2122,11 +2185,13 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
         item = {
             'rp_path': rp_path,
             'rp_sheet': rp_info['sheet_name'],
+            'rp_sheets': rp_info.get('sheet_names', [rp_info['sheet_name']]),
             'report_no': rp_info['report_no'],
             'rfi_path': rfi_path,
             'rfi_sheet': rfi_sheet,
             'rfi_no': rp_info['rfi_no'] or (rfi_info['rfi_no'] if rfi_path else 'Chưa rõ'),
             'sheet_num': rp_info['drawing_sheet_num'],
+            'sheet_nums': rp_info.get('drawing_sheet_nums', [rp_info['drawing_sheet_num']] if rp_info['drawing_sheet_num'] else []),
             'joints_rp': rp_info['joints'],
             'joints_rfi': joints_rfi,
             'pipe_count_rfi': pipe_count_rfi,
@@ -2182,11 +2247,13 @@ def build_reconcile_list(input_dir: str) -> List[Dict]:
         item = {
             'rp_path': None,
             'rp_sheet': None,
+            'rp_sheets': [],
             'report_no': '(Không có - Chỉ RFI)',
             'rfi_path': rfi_path,
             'rfi_sheet': rfi_info['sheet_name'],
             'rfi_no': rfi_info['rfi_no'],
             'sheet_num': None, # Sẽ được đối chiếu tự động với bản vẽ nếu cần
+            'sheet_nums': [],
             'joints_rp': [],
             'joints_rfi': joints_rfi,
             'pipe_count_rfi': pipe_count,
@@ -2361,15 +2428,17 @@ def batch_process(
                         batch_files.append(rfi_prep_xlsx)
                         
                     if item.get('rp_path') and os.path.isfile(item['rp_path']):
-                        rp_prep_xlsx = os.path.join(tmp_dir, f'rp_{idx}.xlsx')
-                        sanitize_and_repair_workbook(
-                            item['rp_path'],
-                            target_sheet=item['rp_sheet'],
-                            orientation=None,
-                            is_rfi=False,
-                            output_path=rp_prep_xlsx
-                        )
-                        batch_files.append(rp_prep_xlsx)
+                        rp_sheets = item.get('rp_sheets') or [item['rp_sheet']]
+                        for s_idx, s_name in enumerate(rp_sheets):
+                            rp_prep_xlsx = os.path.join(tmp_dir, f'rp_{idx}_{s_idx}.xlsx')
+                            sanitize_and_repair_workbook(
+                                item['rp_path'],
+                                target_sheet=s_name,
+                                orientation=None,
+                                is_rfi=False,
+                                output_path=rp_prep_xlsx
+                            )
+                            batch_files.append(rp_prep_xlsx)
                 
                 if progress_callback:
                     progress_callback(1, len(reconcile_list) + 2, f"Đang xuất đồng loạt {len(batch_files)} biểu mẫu sang PDF bằng LibreOffice...")
@@ -2402,41 +2471,68 @@ def batch_process(
                         final_doc.insert_pdf(doc_rfi)
                         doc_rfi.close()
                 
-                # B. Xuất RP sang PDF (nếu đã tạo trong batch_files thì mở trực tiếp, nếu chưa thì fallback xuất lẻ)
+                # B. Xuất RP sang PDF (toàn bộ các sheet báo cáo, ví dụ RP-SPI + 0001-1)
                 if item.get('rp_path') and os.path.isfile(item['rp_path']):
-                    if not (os.path.isfile(tmp_rp_pdf) and os.path.getsize(tmp_rp_pdf) > 0):
-                        export_excel_sheet_to_pdf(excel, item['rp_path'], item['rp_sheet'], tmp_rp_pdf, orientation=None, is_rfi=False)
-                    if os.path.isfile(tmp_rp_pdf) and os.path.getsize(tmp_rp_pdf) > 0:
-                        doc_rp = pymupdf.open(tmp_rp_pdf)
-                        final_doc.insert_pdf(doc_rp)
-                        doc_rp.close()
+                    rp_sheets = item.get('rp_sheets') or [item['rp_sheet']]
+                    for s_idx, s_name in enumerate(rp_sheets):
+                        tmp_s_pdf = os.path.join(tmp_dir, f'rp_{idx}_{s_idx}.pdf')
+                        if not (os.path.isfile(tmp_s_pdf) and os.path.getsize(tmp_s_pdf) > 0):
+                            export_excel_sheet_to_pdf(excel, item['rp_path'], s_name, tmp_s_pdf, orientation=None, is_rfi=False)
+                        if os.path.isfile(tmp_s_pdf) and os.path.getsize(tmp_s_pdf) > 0:
+                            doc_rp = pymupdf.open(tmp_s_pdf)
+                            final_doc.insert_pdf(doc_rp)
+                            doc_rp.close()
                 
-                # C. Trích xuất đúng trang bản vẽ và tô màu số mối (Không áp dụng cho hồ sơ ICR, MRIR và DIC)
+                # C. Trích xuất đúng và đủ các trang bản vẽ và tô màu số mối (Không áp dụng cho hồ sơ ICR, MRIR và DIC)
                 if not (item.get('is_icr') or item.get('is_mrir') or item.get('is_dic')) and drawing_available and doc_drawing_source:
-                    sheet_num = item.get('sheet_num')
+                    sheet_nums = item.get('sheet_nums') or ([item['sheet_num']] if item.get('sheet_num') else [])
                     joints = item.get('joints_rp') if item.get('joints_rp') else item.get('joints_rfi', [])
-                    target_pno = None
+                    target_pnos = []
                     
-                    if sheet_num:
+                    # 1. Tìm các trang theo sheet_nums từ header báo cáo (ví dụ SHT 32,33 -> [2, 3])
+                    if sheet_nums and sheet_map:
                         for pno, s in sheet_map.items():
-                            if str(s) == str(sheet_num):
-                                target_pno = pno
-                                break
-                    if target_pno is None:
-                        target_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map, drawing_pdf_path=actual_drawing_path)
+                            if str(s) in [str(sn) for sn in sheet_nums] and pno not in target_pnos:
+                                target_pnos.append(pno)
+                                
+                    # 2. Dò tìm thêm các trang chứa mối hàn từ weld index hoặc OCR/text
+                    idx_weld = load_weld_index(actual_drawing_path) if actual_drawing_path else None
+                    if idx_weld and joints:
+                        for j in joints:
+                            nj = normalize_code(j)
+                            items_j = idx_weld.get('joints', {}).get(nj, [])
+                            if not items_j:
+                                for k, v in idx_weld.get('joints', {}).items():
+                                    if k.endswith(nj) or (len(nj) > 3 and nj.endswith(k)):
+                                        items_j = v
+                                        break
+                            for it_j in items_j:
+                                p_no_j = it_j.get('pno')
+                                if p_no_j is not None and p_no_j not in target_pnos:
+                                    target_pnos.append(p_no_j)
+                                    
+                    # 3. Fallback nếu chưa tìm thấy trang nào: dùng hàm find_drawing_page_for_joints
+                    if not target_pnos:
+                        fb_pno = find_drawing_page_for_joints(doc_drawing_source, joints, sheet_map, drawing_pdf_path=actual_drawing_path)
+                        if fb_pno is not None:
+                            target_pnos.append(fb_pno)
+                            
+                    target_pnos.sort()
+                    
+                    # Trích xuất và tô màu từng trang bản vẽ
+                    for pno in target_pnos:
+                        dw_page_doc = pymupdf.open()
+                        dw_page_doc.insert_pdf(doc_drawing_source, from_page=pno, to_page=pno)
+                        p = dw_page_doc[0]
                         
-                    dw_page_doc = pymupdf.open()
-                    dw_page_doc.insert_pdf(doc_drawing_source, from_page=target_pno, to_page=target_pno)
-                    p = dw_page_doc[0]
-                    
-                    # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định trước (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
-                    apply_drawing_margins_cbb(dw_page_doc, p)
+                        # Căn chỉnh kích thước khung ngoài bản vẽ theo quy định trước (Lề trên 15mm, 3 lề dưới/trái/phải 10mm)
+                        apply_drawing_margins_cbb(dw_page_doc, p)
 
-                    # Tô màu highlight chuẩn xác không lem theo đúng số mối hàn báo cáo trên hệ tọa độ bản vẽ đã căn chuẩn lề
-                    highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=target_pno)
-                    
-                    final_doc.insert_pdf(dw_page_doc)
-                    dw_page_doc.close()
+                        # Tô màu highlight chuẩn xác các mối hàn xuất hiện trên trang này
+                        highlight_joints_on_page(p, joints, dpi=250, drawing_pdf_path=actual_drawing_path, pno=pno)
+                        
+                        final_doc.insert_pdf(dw_page_doc)
+                        dw_page_doc.close()
 
             if doc_drawing_source:
                 doc_drawing_source.close()
