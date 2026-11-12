@@ -507,7 +507,7 @@ KNOWN_DAYS_DATA = {
     '29/10/2026': {'date': '29/10/2026', 'weather': 'Sunny', 'worker': 35, 'sec4': [{'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W11; KP39-W13; KP39-W15; KP39-W30', 'unit': 'Joint', 'qty': 4, 'accum': 26}, {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP39-W17; KP39-W19; KP39-W30', 'unit': 'Joint', 'qty': 3, 'accum': 23}, {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 5}, {'stt': 4, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W25; KP39-W27; KP39-W31; KP39-W33', 'unit': 'Joint', 'qty': 4, 'accum': 17}, {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W29; KP39-W31; KP39-W33', 'unit': 'Joint', 'qty': 3, 'accum': 14}, {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 4187; 7173; 7639; 3542', 'unit': 'Ống', 'qty': 4, 'accum': 12}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Vệ sinh ống', 'Fit-up và hàn ống', 'Dán FJC ống', 'Phun foam', 'Kéo đẩy ống xuống hào', 'Sắp xếp dọn dẹp vệ sinh bãi']},
     '30/10/2026': {'date': '30/10/2026', 'weather': 'Raining', 'worker': 32, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 64}, {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W09; KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 3, 'accum': 29}, {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP39-W11; KP39-W13; KP39-W15', 'unit': 'Joint', 'qty': 3, 'accum': 26}, {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 6}, {'stt': 5, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W19; KP39-W21; KP39-W27', 'unit': 'Joint', 'qty': 3, 'accum': 20}, {'stt': 6, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W29', 'unit': 'Joint', 'qty': 1, 'accum': 15}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Tiếp nhận và vệ sinh ống', 'Fit-up và hàn ống', 'NDT mối hàn', 'Dán FJC ống', 'Sắp xếp dọn dẹp bãi']},
     '31/10/2026': {'date': '31/10/2026', 'weather': 'Sunny', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 72}, {'stt': 2, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7639; 3568; 0613; 3583; 3420; 4957; 7253', 'unit': 'Ống', 'qty': 7, 'accum': 19}, {'stt': 3, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W05; KP39-W07; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 4, 'accum': 33}, {'stt': 4, 'content': 'Nghiệm thu Visual mối hàn: KP39-W09; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 3, 'accum': 30}, {'stt': 5, 'content': 'Nghiệm thu NDT AUT mối hàn: KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 2, 'accum': 27}, {'stt': 6, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 7}, {'stt': 7, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 2, 'accum': 22}, {'stt': 8, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W21; KP39-W27; KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 4, 'accum': 19}, {'stt': 9, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Vệ sinh ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát dán FJC', 'Sắp xếp dọn dẹp bãi']},
-    '01/11/2026': {'date': '01/11/2026', 'weather': 'Raining', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 80}, {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W80; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 3, 'accum': 36}, {'stt': 3, 'content': 'Nghiệm thu Visual mối hàn: KP39-W07', 'unit': 'Joint', 'qty': 1, 'accum': 31}, {'stt': 4, 'content': 'Nghiệm thu NDT AUT mối hàn: KP39-W07; KP39-W09; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 4, 'accum': 31}, {'stt': 5, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 8}, {'stt': 6, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W17; KP39-W13; KP39-W15; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 5, 'accum': 28}, {'stt': 7, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W28; KP39-W23; KP39-W24; KP39-W26; KP39-W25', 'unit': 'Joint', 'qty': 5, 'accum': 25}, {'stt': 8, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7253; 3401; 3782; 6958; 7698', 'unit': 'Ống', 'qty': 5, 'accum': 24}, {'stt': 9, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Tiếp nhận và vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
+    '01/11/2026': {'date': '01/11/2026', 'weather': 'Raining', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': 16, 'accum': 80}, {'stt': 2, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 80}, {'stt': 3, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W80; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 3, 'accum': 36}, {'stt': 4, 'content': 'Nghiệm thu Visual mối hàn: KP39-W07', 'unit': 'Joint', 'qty': 1, 'accum': 31}, {'stt': 5, 'content': 'Nghiệm thu NDT AUT mối hàn: KP39-W07; KP39-W09; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 4, 'accum': 31}, {'stt': 6, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 8}, {'stt': 7, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W17; KP39-W13; KP39-W15; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 5, 'accum': 28}, {'stt': 8, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W28; KP39-W23; KP39-W24; KP39-W26; KP39-W25', 'unit': 'Joint', 'qty': 5, 'accum': 25}, {'stt': 9, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7253; 3401; 3782; 6958; 7698', 'unit': 'Ống', 'qty': 5, 'accum': 24}, {'stt': 10, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Tiếp nhận và vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
     '02/11/2026': {'date': '02/11/2026', 'weather': 'Sunny', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W01; KP39-W03; KP39-W16; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 39}, {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT: KP39-W05; KP39-W20; KP39-W22; KP38-W80', 'unit': 'Joint', 'qty': 4, 'accum': 35}, {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 9}, {'stt': 4, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W09; KP39-W11; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 32}, {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 27}, {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 23}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
     '03/11/2026': {
         'date': '03/11/2026',
@@ -538,7 +538,7 @@ KNOWN_DAYS_DATA = {
         'weather': 'Sunny',
         'worker': 34,
         'sec4': [
-            {'stt': 1, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': 16, 'accum': 80},
+            {'stt': 1, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': 16, 'accum': 96},
             {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W72; KP38-W74; KP39-W08; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 47},
             {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP38-W76; KP38-W78; KP39-W12; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 43},
             {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 11},
@@ -702,6 +702,27 @@ def auto_discover_new_days(ctrl_xlsx, form_xlsx, known_days):
 
         # 3. Lấy tất cả ngày xuất hiện cần bổ sung
         all_candidate_dates = set(ht_data_by_date.keys()).union(extra_by_date.keys())
+        
+        # Khởi tạo running accumulators từ các ngày đã biết (new_days)
+        running_pipe_mrir = 0
+        running_pipe_icr = 0
+        running_weld_mrir = 0
+        running_dic = 0
+        for d_k, d_val in new_days.items():
+            for it in d_val.get('sec4', []):
+                c_low = it.get('content', '').lower()
+                acc = it.get('accum')
+                if isinstance(acc, int) or (isinstance(acc, str) and acc.isdigit()):
+                    val_acc = int(acc)
+                    if 'tiếp nhận vật tư ống' in c_low:
+                        running_pipe_mrir = max(running_pipe_mrir, val_acc)
+                    elif 'vệ sinh làm sạch lòng ống' in c_low or 'kiểm tra ống đầu vào' in c_low:
+                        running_pipe_icr = max(running_pipe_icr, val_acc)
+                    elif 'tiếp nhận vật liệu hàn' in c_low:
+                        running_weld_mrir = max(running_weld_mrir, val_acc)
+                    elif 'hiệu chuẩn' in c_low:
+                        running_dic = max(running_dic, val_acc)
+
         for d_str in sorted(all_candidate_dates, key=lambda x: datetime.datetime.strptime(x, '%d/%m/%Y')):
             if d_str in new_days:
                 continue
@@ -714,17 +735,20 @@ def auto_discover_new_days(ctrl_xlsx, form_xlsx, known_days):
             ext_items = extra_by_date.get(d_str, [])
             for code, desc in ext_items:
                 if code == 'MRIR' and 'WELDING' in desc.upper():
-                    sec4.append({'stt': stt, 'content': 'Nghiệm thu tiếp nhận vật liệu hàn', 'unit': 'Lot', 'qty': 1, 'accum': ''})
+                    running_weld_mrir += 1
+                    sec4.append({'stt': stt, 'content': 'Nghiệm thu tiếp nhận vật liệu hàn', 'unit': 'Lot', 'qty': 1, 'accum': running_weld_mrir})
                     stt += 1
                 elif code == 'MRIR' and ('PIPE' in desc.upper() or 'VẬT TƯ' in desc.upper() or 'ỐNG' in desc.upper()):
                     qm = re.search(r'(\d+)\s*(?:pcs|ống)', desc, re.I)
                     q_val = int(qm.group(1)) if qm else 16
-                    sec4.append({'stt': stt, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': q_val, 'accum': ''})
+                    running_pipe_mrir += q_val
+                    sec4.append({'stt': stt, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': q_val, 'accum': running_pipe_mrir})
                     stt += 1
                 elif code == 'ICR':
                     qm = re.search(r'(\d+)\s*(?:pcs|ống)', desc, re.I)
                     q_val = int(qm.group(1)) if qm else 8
-                    sec4.append({'stt': stt, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': q_val, 'accum': ''})
+                    running_pipe_icr += q_val
+                    sec4.append({'stt': stt, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': q_val, 'accum': running_pipe_icr})
                     stt += 1
 
             # B. Các bước thi công mối hàn từ bảng Hoàn thành Joint
@@ -739,7 +763,8 @@ def auto_discover_new_days(ctrl_xlsx, form_xlsx, known_days):
                 stt += 1
                 
             # Hiệu chuẩn thiết bị đo
-            sec4.append({'stt': stt, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': ''})
+            running_dic += 1
+            sec4.append({'stt': stt, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': running_dic})
             stt += 1
             
             if ht_day.get('fjc') and ht_day['fjc']['qty'] > 0:
