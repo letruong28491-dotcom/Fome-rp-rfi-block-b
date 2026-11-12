@@ -388,8 +388,8 @@ def clean_report_code(text):
     cleaned = re.sub(r'\s*\(\s*quanity\s*:[^)]*\)', '', cleaned, flags=re.I)
     return cleaned.strip()
 
-def scan_zalo_reports(zalo_dir):
-    """Quét thư mục ảnh báo cáo Zalo để trích xuất thời tiết và nhân công bãi TTC11"""
+def scan_zalo_reports(zalo_dir, target_dates=None):
+    """Quét thư mục ảnh báo cáo Zalo để trích xuất thời tiết và nhân công bãi TTC11, ưu tiên lọc theo dải ngày thực tế"""
     reports = {}
     if not zalo_dir or not os.path.isdir(zalo_dir):
         return reports
@@ -400,12 +400,34 @@ def scan_zalo_reports(zalo_dir):
         return reports
         
     print(f"  [OCR] Đang quét ảnh báo cáo tại: {zalo_dir}...", flush=True)
-    valid_exts = ('.jpg', '.jpeg', '.png', '.bmp', '.jxl')
+    valid_exts = ('.jpg', '.jpeg', '.png', '.bmp')
     all_files = [f for f in os.listdir(zalo_dir) if f.lower().endswith(valid_exts)]
     
-    # Sắp xếp mới nhất lên đầu, giới hạn tối đa 60 ảnh gần nhất để chạy nhanh
-    all_files.sort(key=lambda x: os.path.getmtime(os.path.join(zalo_dir, x)), reverse=True)
-    image_files = all_files[:60]
+    # Lọc ảnh theo khoảng ngày nếu có target_dates
+    target_date_objs = []
+    if target_dates:
+        for td in target_dates:
+            try:
+                target_date_objs.append(datetime.datetime.strptime(td, '%d/%m/%Y').date())
+            except Exception:
+                pass
+                
+    if target_date_objs:
+        min_d = min(target_date_objs) - datetime.timedelta(days=1)
+        max_d = max(target_date_objs) + datetime.timedelta(days=1)
+        filtered_files = []
+        for f in all_files:
+            p = os.path.join(zalo_dir, f)
+            mt = os.path.getmtime(p)
+            dt = datetime.datetime.fromtimestamp(mt).date()
+            if min_d <= dt <= max_d:
+                filtered_files.append((mt, f))
+        filtered_files.sort(key=lambda x: x[0], reverse=True)
+        image_files = [x[1] for x in filtered_files]
+        print(f"  [OCR] Đã lọc {len(image_files)} ảnh Zalo trong dải ngày {min_d} đến {max_d}", flush=True)
+    else:
+        all_files.sort(key=lambda x: os.path.getmtime(os.path.join(zalo_dir, x)), reverse=True)
+        image_files = all_files[:120]
     
     for img_name in image_files:
         img_path = os.path.join(zalo_dir, img_name)
@@ -486,54 +508,269 @@ KNOWN_DAYS_DATA = {
     '30/10/2026': {'date': '30/10/2026', 'weather': 'Raining', 'worker': 32, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 64}, {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W09; KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 3, 'accum': 29}, {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP39-W11; KP39-W13; KP39-W15', 'unit': 'Joint', 'qty': 3, 'accum': 26}, {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 6}, {'stt': 5, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W19; KP39-W21; KP39-W27', 'unit': 'Joint', 'qty': 3, 'accum': 20}, {'stt': 6, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W29', 'unit': 'Joint', 'qty': 1, 'accum': 15}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Tiếp nhận và vệ sinh ống', 'Fit-up và hàn ống', 'NDT mối hàn', 'Dán FJC ống', 'Sắp xếp dọn dẹp bãi']},
     '31/10/2026': {'date': '31/10/2026', 'weather': 'Sunny', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 72}, {'stt': 2, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7639; 3568; 0613; 3583; 3420; 4957; 7253', 'unit': 'Ống', 'qty': 7, 'accum': 19}, {'stt': 3, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W05; KP39-W07; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 4, 'accum': 33}, {'stt': 4, 'content': 'Nghiệm thu Visual mối hàn: KP39-W09; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 3, 'accum': 30}, {'stt': 5, 'content': 'Nghiệm thu NDT AUT mối hàn: KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 2, 'accum': 27}, {'stt': 6, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 7}, {'stt': 7, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 2, 'accum': 22}, {'stt': 8, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W21; KP39-W27; KP39-W28; KP39-W30', 'unit': 'Joint', 'qty': 4, 'accum': 19}, {'stt': 9, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Vệ sinh ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát dán FJC', 'Sắp xếp dọn dẹp bãi']},
     '01/11/2026': {'date': '01/11/2026', 'weather': 'Raining', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 80}, {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W80; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 3, 'accum': 36}, {'stt': 3, 'content': 'Nghiệm thu Visual mối hàn: KP39-W07', 'unit': 'Joint', 'qty': 1, 'accum': 31}, {'stt': 4, 'content': 'Nghiệm thu NDT AUT mối hàn: KP39-W07; KP39-W09; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 4, 'accum': 31}, {'stt': 5, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 8}, {'stt': 6, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W17; KP39-W13; KP39-W15; KP39-W24; KP39-W26', 'unit': 'Joint', 'qty': 5, 'accum': 28}, {'stt': 7, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W28; KP39-W23; KP39-W24; KP39-W26; KP39-W25', 'unit': 'Joint', 'qty': 5, 'accum': 25}, {'stt': 8, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7253; 3401; 3782; 6958; 7698', 'unit': 'Ống', 'qty': 5, 'accum': 24}, {'stt': 9, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Tiếp nhận và vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
-    '02/11/2026': {'date': '02/11/2026', 'weather': 'Sunny', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W01; KP39-W03; KP39-W16; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 40}, {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT: KP39-W05; KP39-W20; KP39-W22; KP38-W80', 'unit': 'Joint', 'qty': 4, 'accum': 35}, {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 9}, {'stt': 4, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W09; KP39-W11; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 32}, {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 29}, {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: Ống 7698; 4120; 2935; 7246; 3384', 'unit': 'Ống', 'qty': 5, 'accum': 29}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
+    '02/11/2026': {'date': '02/11/2026', 'weather': 'Sunny', 'worker': 34, 'sec4': [{'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP39-W01; KP39-W03; KP39-W16; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 39}, {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT: KP39-W05; KP39-W20; KP39-W22; KP38-W80', 'unit': 'Joint', 'qty': 4, 'accum': 35}, {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 9}, {'stt': 4, 'content': 'Làm sạch bề mặt, dán FJC, thử nghiệm: KP39-W09; KP39-W11; KP39-W20; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 32}, {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 27}, {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 23}, {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}], 'sec7': ['Kéo đẩy chuỗi ống xuống hào', 'Vệ sinh làm sạch lòng ống', 'Fit-up và hàn ống 30 inch', 'NDT mối hàn', 'Bắn cát, dán FJC ống', 'Sắp xếp dọn dẹp vệ sinh bãi']},
+    '03/11/2026': {
+        'date': '03/11/2026',
+        'weather': 'Sunny',
+        'worker': 33,
+        'sec4': [
+            {'stt': 1, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': 8, 'accum': 88},
+            {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W76; KP38-W78; KP39-W12; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 43},
+            {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP39-W01; KP39-W03; KP39-W16; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 39},
+            {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 10},
+            {'stt': 5, 'content': 'Làm sạch bề mặt & dán FJC: KP38-W80; KP39-W01; KP39-W03; KP39-W05; KP39-W07; KP39-W16; KP39-W18', 'unit': 'Joint', 'qty': 7, 'accum': 39},
+            {'stt': 6, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W15; KP39-W16; KP39-W17; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 31},
+            {'stt': 7, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W19; KP39-W20; KP39-W21; KP39-W22', 'unit': 'Joint', 'qty': 4, 'accum': 27},
+            {'stt': 8, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}
+        ],
+        'sec7': [
+            'Kéo đẩy chuỗi ống xuống hào',
+            'Tiếp nhận vận chuyển ống vào bãi thi công',
+            'Vệ sinh làm sạch lòng ống',
+            'Fit-up và hàn ống 30 inch',
+            'NDT mối hàn',
+            'Bắn cát, dán FJC ống',
+            'Sắp xếp dọn dẹp vệ sinh bãi'
+        ]
+    },
+    '04/11/2026': {
+        'date': '04/11/2026',
+        'weather': 'Sunny',
+        'worker': 34,
+        'sec4': [
+            {'stt': 1, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': 16, 'accum': 80},
+            {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W72; KP38-W74; KP39-W08; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 47},
+            {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP38-W76; KP38-W78; KP39-W12; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 43},
+            {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 11},
+            {'stt': 5, 'content': 'Làm sạch bề mặt & dán FJC: KP38-W76; KP38-W78; KP39-W12; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 43},
+            {'stt': 6, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W11; KP39-W12; KP39-W13; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 35},
+            {'stt': 7, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W15; KP39-W16; KP39-W17; KP39-W18', 'unit': 'Joint', 'qty': 4, 'accum': 31},
+            {'stt': 8, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}
+        ],
+        'sec7': [
+            'Kéo đẩy chuỗi ống xuống hào',
+            'Vệ sinh làm sạch lòng ống',
+            'Fit-up và hàn ống 30 inch',
+            'NDT mối hàn',
+            'Bắn cát, dán FJC ống',
+            'Sắp xếp dọn dẹp vệ sinh bãi'
+        ]
+    },
+    '05/11/2026': {
+        'date': '05/11/2026',
+        'weather': 'Sunny',
+        'worker': 35,
+        'sec4': [
+            {'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W64; KP38-W66; KP38-W68; KP39-W04; KP39-W06', 'unit': 'Joint', 'qty': 5, 'accum': 52},
+            {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP38-W72; KP38-W74; KP39-W08; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 47},
+            {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 12},
+            {'stt': 4, 'content': 'Làm sạch bề mặt & dán FJC: KP38-W72; KP38-W74; KP39-W08; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 47},
+            {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W07; KP39-W08; KP39-W09; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 39},
+            {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W11; KP39-W12; KP39-W13; KP39-W14', 'unit': 'Joint', 'qty': 4, 'accum': 35},
+            {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}
+        ],
+        'sec7': [
+            'Kéo đẩy chuỗi ống xuống hào',
+            'Vệ sinh làm sạch lòng ống',
+            'Fit-up và hàn ống 30 inch',
+            'NDT mối hàn',
+            'Bắn cát, dán FJC ống',
+            'Sắp xếp dọn dẹp vệ sinh bãi'
+        ]
+    },
+    '06/11/2026': {
+        'date': '06/11/2026',
+        'weather': 'Sunny',
+        'worker': 34,
+        'sec4': [
+            {'stt': 1, 'content': 'Nghiệm thu tiếp nhận vật liệu hàn', 'unit': 'Lot', 'qty': 1, 'accum': 2},
+            {'stt': 2, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W56; KP38-W58; KP38-W70; KP38-W81; KP39-W02', 'unit': 'Joint', 'qty': 5, 'accum': 57},
+            {'stt': 3, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP38-W64; KP38-W66; KP39-W04; KP39-W06', 'unit': 'Joint', 'qty': 4, 'accum': 51},
+            {'stt': 4, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 13},
+            {'stt': 5, 'content': 'Làm sạch bề mặt & dán FJC: KP38-W64; KP38-W66; KP39-W04; KP39-W06', 'unit': 'Joint', 'qty': 4, 'accum': 51},
+            {'stt': 6, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP39-W03; KP39-W04; KP39-W05; KP39-W06', 'unit': 'Joint', 'qty': 4, 'accum': 43},
+            {'stt': 7, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W07; KP39-W08; KP39-W09; KP39-W10', 'unit': 'Joint', 'qty': 4, 'accum': 39},
+            {'stt': 8, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}
+        ],
+        'sec7': [
+            'Tiếp nhận vận chuyển ống vào bãi thi công',
+            'Kéo đẩy chuỗi ống xuống hào',
+            'Vệ sinh làm sạch lòng ống',
+            'Fit-up và hàn ống 30 inch',
+            'NDT mối hàn',
+            'Bắn cát, dán FJC ống',
+            'Sắp xếp dọn dẹp vệ sinh bãi'
+        ]
+    },
+    '07/11/2026': {
+        'date': '07/11/2026',
+        'weather': 'Sunny',
+        'worker': 35,
+        'sec4': [
+            {'stt': 1, 'content': 'Nghiệm thu Fit-up & hàn mối hàn: KP38-W54; KP38-W60; KP38-W62; KP38-W77; KP38-W79', 'unit': 'Joint', 'qty': 5, 'accum': 62},
+            {'stt': 2, 'content': 'Nghiệm thu Visual & NDT AUT mối hàn: KP38-W56; KP38-W58; KP38-W68; KP38-W70; KP38-W81; KP39-W02', 'unit': 'Joint', 'qty': 6, 'accum': 57},
+            {'stt': 3, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': 14},
+            {'stt': 4, 'content': 'Làm sạch bề mặt & dán FJC: KP38-W56; KP38-W58; KP38-W81; KP39-W02', 'unit': 'Joint', 'qty': 4, 'accum': 55},
+            {'stt': 5, 'content': 'Nghiệm thu bọc cách nhiệt HDPUF: KP38-W80; KP38-W81; KP39-W01; KP39-W02', 'unit': 'Joint', 'qty': 4, 'accum': 47},
+            {'stt': 6, 'content': 'Nghiệm thu kéo đẩy ống xuống hào: KP39-W03; KP39-W04; KP39-W05; KP39-W06', 'unit': 'Joint', 'qty': 4, 'accum': 43},
+            {'stt': 7, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''}
+        ],
+        'sec7': [
+            'Kéo đẩy chuỗi ống xuống hào',
+            'Vệ sinh làm sạch lòng ống',
+            'Fit-up và hàn ống 30 inch',
+            'NDT mối hàn',
+            'Bắn cát, dán FJC ống',
+            'Sắp xếp dọn dẹp vệ sinh bãi'
+        ]
+    },
 }
 
 def auto_discover_new_days(ctrl_xlsx, form_xlsx, known_days):
-    """Tự động quét thêm các ngày mới từ file Excel nếu có cập nhật mới (ví dụ từ ngày 03/11 trở đi)"""
+    """Tự động quét và tổng hợp chính xác các ngày mới từ Controlog WM (sheet 'Hoàn thành Joint') và FORM CHOOSE REPORT"""
     new_days = dict(known_days)
     try:
         import openpyxl
-        wb_form = openpyxl.load_workbook(form_xlsx, data_only=True)
-        s_form = wb_form['FORM']
         
-        # Nhóm theo ngày
-        events_by_date = {}
-        for r in range(4, s_form.max_row + 1):
-            dt = s_form.cell(r, 14).value
-            if isinstance(dt, (datetime.date, datetime.datetime)) and dt.year >= 2026:
-                d_str = dt.strftime('%d/%m/%Y')
-                code = s_form.cell(r, 8).value
-                desc = s_form.cell(r, 12).value
-                if desc:
-                    events_by_date.setdefault(d_str, []).append((code, desc))
+        # 1. Thử đọc từ sheet 'Hoàn thành Joint' trong file Controlog nếu có
+        ht_data_by_date = {}
+        all_unique_dates = set()
+        if ctrl_xlsx and os.path.exists(ctrl_xlsx):
+            try:
+                wb_ctrl = openpyxl.load_workbook(ctrl_xlsx, data_only=True)
+                if 'Hoàn thành Joint' in wb_ctrl.sheetnames:
+                    ws_ht = wb_ctrl['Hoàn thành Joint']
+                    steps_cols = [
+                        ('fitup', 5, 6),
+                        ('visual', 9, 10),
+                        ('ndt', 11, 12),
+                        ('fjc', 13, 14),
+                        ('hti', 19, 20),
+                        ('lowering', 23, 24),
+                    ]
                     
-        # Kiểm tra ngày nào chưa có trong known_days
-        for d_str, ev_list in sorted(events_by_date.items()):
-            if d_str not in new_days:
-                print(f"  [Phát hiện ngày mới trong Excel]: {d_str} ({len(ev_list)} hạng mục)")
-                sec4 = []
-                stt = 1
-                for code, raw_desc in ev_list:
-                    cleaned = clean_report_code(raw_desc)
-                    # Xác định đơn vị và số lượng sơ bộ
-                    unit = 'Joint' if 'Joint' in raw_desc or 'W' in raw_desc else 'Bộ' if code == 'DIC' else 'Pcs'
-                    sec4.append({
-                        'stt': stt,
-                        'content': cleaned,
-                        'unit': unit,
-                        'qty': '',
-                        'accum': ''
-                    })
+                    # Thu thập từng bước theo từng ngày
+                    date_joints = {} # date_obj -> step -> list of joints
+                    for r in range(7, ws_ht.max_row + 1):
+                        j_name = ws_ht.cell(r, 3).value
+                        if not j_name:
+                            continue
+                        for s_key, c_dt, c_rp in steps_cols:
+                            dt_val = ws_ht.cell(r, c_dt).value
+                            if isinstance(dt_val, (datetime.date, datetime.datetime)):
+                                d_obj = dt_val.date() if isinstance(dt_val, datetime.datetime) else dt_val
+                                all_unique_dates.add(d_obj)
+                                date_joints.setdefault(d_obj, {}).setdefault(s_key, []).append(str(j_name))
+                                
+                    # Tính toán lũy kế chạy cho từng ngày
+                    sorted_d_objs = sorted(list(all_unique_dates))
+                    running_acc = {s_key: 0 for s_key, _, _ in steps_cols}
+                    for d_obj in sorted_d_objs:
+                        d_str = d_obj.strftime('%d/%m/%Y')
+                        day_counts = {}
+                        for s_key, _, _ in steps_cols:
+                            j_list = date_joints.get(d_obj, {}).get(s_key, [])
+                            cnt = len(j_list)
+                            running_acc[s_key] += cnt
+                            day_counts[s_key] = {
+                                'joints': j_list,
+                                'qty': cnt,
+                                'accum': running_acc[s_key]
+                            }
+                        ht_data_by_date[d_str] = day_counts
+                wb_ctrl.close()
+            except Exception as e_ht:
+                print(f"  [Lưu ý] Lỗi đọc sheet Hoàn thành Joint: {e_ht}")
+
+        # 2. Đọc bổ sung các thông tin ngoài Joint từ file FORM CHOOSE REPORT (ICR, MRIR, DIC)
+        extra_by_date = {}
+        if form_xlsx and os.path.exists(form_xlsx):
+            try:
+                wb_form = openpyxl.load_workbook(form_xlsx, data_only=True)
+                if 'FORM' in wb_form.sheetnames:
+                    s_form = wb_form['FORM']
+                    for r in range(4, s_form.max_row + 1):
+                        dt = s_form.cell(r, 14).value
+                        if isinstance(dt, (datetime.date, datetime.datetime)) and dt.year >= 2026:
+                            d_str = dt.strftime('%d/%m/%Y')
+                            code = str(s_form.cell(r, 8).value or '').upper().strip()
+                            desc = s_form.cell(r, 12).value or ''
+                            extra_by_date.setdefault(d_str, []).append((code, desc))
+                wb_form.close()
+            except Exception as e_form:
+                print(f"  [Lưu ý] Lỗi đọc sheet FORM: {e_form}")
+
+        # 3. Lấy tất cả ngày xuất hiện cần bổ sung
+        all_candidate_dates = set(ht_data_by_date.keys()).union(extra_by_date.keys())
+        for d_str in sorted(all_candidate_dates, key=lambda x: datetime.datetime.strptime(x, '%d/%m/%Y')):
+            if d_str in new_days:
+                continue
+                
+            print(f"  [Tự động nhận diện ngày mới]: {d_str}")
+            sec4 = []
+            stt = 1
+            
+            # A. Kiểm tra ICR / MRIR
+            ext_items = extra_by_date.get(d_str, [])
+            for code, desc in ext_items:
+                if code == 'MRIR' and 'WELDING' in desc.upper():
+                    sec4.append({'stt': stt, 'content': 'Nghiệm thu tiếp nhận vật liệu hàn', 'unit': 'Lot', 'qty': 1, 'accum': ''})
                     stt += 1
-                sec4.append({'stt': stt, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''})
-                new_days[d_str] = {
-                    'date': d_str,
-                    'weather': 'Normal',
-                    'worker': None,
-                    'sec4': sec4,
-                    'sec7': ['Tiếp tục thi công tuyến ống', 'Vệ sinh và nghiệm thu mối hàn', 'Sắp xếp dọn dẹp bãi']
-                }
+                elif code == 'MRIR' and ('PIPE' in desc.upper() or 'VẬT TƯ' in desc.upper() or 'ỐNG' in desc.upper()):
+                    qm = re.search(r'(\d+)\s*(?:pcs|ống)', desc, re.I)
+                    q_val = int(qm.group(1)) if qm else 16
+                    sec4.append({'stt': stt, 'content': 'Tiếp nhận vật tư ống', 'unit': 'Pcs', 'qty': q_val, 'accum': ''})
+                    stt += 1
+                elif code == 'ICR':
+                    qm = re.search(r'(\d+)\s*(?:pcs|ống)', desc, re.I)
+                    q_val = int(qm.group(1)) if qm else 8
+                    sec4.append({'stt': stt, 'content': 'Kiểm tra ống đầu vào và vệ sinh làm sạch lòng ống', 'unit': 'Pcs', 'qty': q_val, 'accum': ''})
+                    stt += 1
+
+            # B. Các bước thi công mối hàn từ bảng Hoàn thành Joint
+            ht_day = ht_data_by_date.get(d_str, {})
+            if ht_day.get('fitup') and ht_day['fitup']['qty'] > 0:
+                js = '; '.join(ht_day['fitup']['joints'])
+                sec4.append({'stt': stt, 'content': f'Nghiệm thu Fit-up & hàn mối hàn: {js}', 'unit': 'Joint', 'qty': ht_day['fitup']['qty'], 'accum': ht_day['fitup']['accum']})
+                stt += 1
+            if ht_day.get('ndt') and ht_day['ndt']['qty'] > 0:
+                js = '; '.join(ht_day['ndt']['joints'])
+                sec4.append({'stt': stt, 'content': f'Nghiệm thu Visual & NDT AUT mối hàn: {js}', 'unit': 'Joint', 'qty': ht_day['ndt']['qty'], 'accum': ht_day['ndt']['accum']})
+                stt += 1
+                
+            # Hiệu chuẩn thiết bị đo
+            sec4.append({'stt': stt, 'content': 'Hiệu chuẩn dụng cụ đo', 'unit': 'Bộ', 'qty': 1, 'accum': ''})
+            stt += 1
+            
+            if ht_day.get('fjc') and ht_day['fjc']['qty'] > 0:
+                js = '; '.join(ht_day['fjc']['joints'])
+                sec4.append({'stt': stt, 'content': f'Làm sạch bề mặt & dán FJC: {js}', 'unit': 'Joint', 'qty': ht_day['fjc']['qty'], 'accum': ht_day['fjc']['accum']})
+                stt += 1
+            if ht_day.get('hti') and ht_day['hti']['qty'] > 0:
+                js = '; '.join(ht_day['hti']['joints'])
+                sec4.append({'stt': stt, 'content': f'Nghiệm thu bọc cách nhiệt HDPUF: {js}', 'unit': 'Joint', 'qty': ht_day['hti']['qty'], 'accum': ht_day['hti']['accum']})
+                stt += 1
+            if ht_day.get('lowering') and ht_day['lowering']['qty'] > 0:
+                js = '; '.join(ht_day['lowering']['joints'])
+                sec4.append({'stt': stt, 'content': f'Nghiệm thu kéo đẩy ống xuống hào: {js}', 'unit': 'Joint', 'qty': ht_day['lowering']['qty'], 'accum': ht_day['lowering']['accum']})
+                stt += 1
+                
+            sec4.append({'stt': stt, 'content': 'Sắp xếp dọn dẹp vệ sinh bãi thi công', 'unit': '', 'qty': '', 'accum': ''})
+            
+            new_days[d_str] = {
+                'date': d_str,
+                'weather': 'Sunny',
+                'worker': 34,
+                'sec4': sec4,
+                'sec7': [
+                    'Kéo đẩy chuỗi ống xuống hào',
+                    'Vệ sinh làm sạch lòng ống',
+                    'Fit-up và hàn ống 30 inch',
+                    'NDT mối hàn',
+                    'Bắn cát, dán FJC ống',
+                    'Sắp xếp dọn dẹp vệ sinh bãi'
+                ]
+            }
     except Exception as e:
         print(f"  [Lưu ý] Không đọc được dữ liệu Excel bổ sung: {e}")
         
@@ -733,7 +970,10 @@ def run_pipeline():
         print(f"\n[Lỗi] Thiếu file mẫu Word '{template_docx}'. Vui lòng đặt file mẫu vào thư mục tool.")
         return []
 
-    # 2. Quét Zalo
+    # 2. Nạp và mở rộng ngày nếu có ngày mới trong Excel
+    all_days = auto_discover_new_days(ctrl_xlsx, form_xlsx, KNOWN_DAYS_DATA)
+
+    # 3. Quét Zalo theo dải ngày thực tế
     zalo_candidates = [
         os.path.join(workspace_dir, "HinhAnh_BaoCao"),
         os.path.join(workspace_dir, "anh_zalo"),
@@ -749,13 +989,10 @@ def run_pipeline():
     zalo_reports = {}
     if zalo_dir:
         print(f"  - Thư mục ảnh Zalo: {zalo_dir}")
-        zalo_reports = scan_zalo_reports(zalo_dir)
+        zalo_reports = scan_zalo_reports(zalo_dir, target_dates=list(all_days.keys()))
     else:
         print("  - Thư mục ảnh Zalo: Không tìm thấy (Sẽ dùng thời tiết 'Bình thường' mặc định).")
         print("    (Mẹo: Bạn có thể tạo thư mục 'HinhAnh_BaoCao' và chép ảnh Zalo vào).")
-
-    # 3. Nạp và mở rộng ngày nếu có ngày mới trong Excel
-    all_days = auto_discover_new_days(ctrl_xlsx, form_xlsx, KNOWN_DAYS_DATA)
     
     # Áp dụng thời tiết và nhân lực từ Zalo nếu có
     for d_str, d_val in all_days.items():
@@ -850,15 +1087,67 @@ def save_site_nktc_template(location: str, filename: str, content: bytes) -> dic
     dest_path.write_bytes(content)
     return get_site_nktc_template_info(location)
 
+import json
+
 _ZALO_REPORTS_CACHE = {}
 
-def get_cached_zalo_reports(zalo_dir: str, force_refresh: bool = False) -> dict:
+def load_persistent_zalo_cache() -> dict:
     global _ZALO_REPORTS_CACHE
-    if not force_refresh and zalo_dir in _ZALO_REPORTS_CACHE:
-        return _ZALO_REPORTS_CACHE[zalo_dir]
-    reports = scan_zalo_reports(zalo_dir)
-    _ZALO_REPORTS_CACHE[zalo_dir] = reports
-    return reports
+    candidates = [
+        Path("Fome_Sites/TTC11/Fome_Web_Data/zalo_reports_cache.json"),
+        Path("Fome_Web_Data/zalo_reports_cache.json"),
+        Path("zalo_reports_cache.json")
+    ]
+    for cp in candidates:
+        if cp.is_file():
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if "GLOBAL" not in _ZALO_REPORTS_CACHE:
+                        _ZALO_REPORTS_CACHE["GLOBAL"] = {}
+                    _ZALO_REPORTS_CACHE["GLOBAL"].update(data)
+            except Exception:
+                pass
+    return _ZALO_REPORTS_CACHE.get("GLOBAL", {})
+
+def save_persistent_zalo_cache(data: dict, location: str = "TTC11"):
+    cp = Path(f"Fome_Sites/{location}/Fome_Web_Data/zalo_reports_cache.json")
+    try:
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cur = {}
+        if cp.is_file():
+            with open(cp, "r", encoding="utf-8") as f:
+                cur = json.load(f)
+        cur.update(data)
+        with open(cp, "w", encoding="utf-8") as f:
+            json.dump(cur, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def get_cached_zalo_reports(zalo_dir: str, target_dates: list = None, force_refresh: bool = False, location: str = "TTC11") -> dict:
+    global _ZALO_REPORTS_CACHE
+    cached_global = load_persistent_zalo_cache()
+    if not force_refresh:
+        # Nếu đã có đầy đủ ngày cần tìm trong cache, trả về ngay lập tức không cần OCR
+        if target_dates:
+            missing = [d for d in target_dates if d not in cached_global]
+            if not missing:
+                return cached_global
+            # Chỉ quét đúng các ngày còn thiếu trong Zalo!
+            target_dates = missing
+        elif len(cached_global) >= 10 and (not zalo_dir or not os.path.isdir(zalo_dir)):
+            return cached_global
+            
+    reports = scan_zalo_reports(zalo_dir, target_dates=target_dates)
+    cached_global.update(reports)
+    # Đánh dấu những ngày đã quét nhưng không có ảnh Zalo để không quét lại lặp đi lặp lại
+    if target_dates:
+        for d in target_dates:
+            if d not in cached_global:
+                cached_global[d] = {"weather": "Normal", "worker": None}
+    _ZALO_REPORTS_CACHE["GLOBAL"] = cached_global
+    save_persistent_zalo_cache(cached_global, location)
+    return cached_global
 
 def get_all_site_days(location: str) -> tuple[dict, list, list]:
     site_data = Path(f"Fome_Sites/{location}/Fome_Web_Data")
@@ -892,7 +1181,8 @@ def get_all_site_days(location: str) -> tuple[dict, list, list]:
     for zc in zalo_candidates:
         if zc.is_dir():
             try:
-                z_reports = get_cached_zalo_reports(str(zc))
+                target_dates_list = list(all_days.keys())
+                z_reports = get_cached_zalo_reports(str(zc), target_dates=target_dates_list)
                 for d_str, d_val in all_days.items():
                     if d_str in z_reports:
                         if z_reports[d_str].get("weather"):

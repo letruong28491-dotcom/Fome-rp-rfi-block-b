@@ -1,0 +1,149 @@
+{
+  "23/10/2026": {
+    "weather": "Sunny",
+    "worker": 30,
+    "file": "1792801316546_1506833805674878003_g5241664229805465444_39ee64ef8ec4bb2be0a87b22b11a9752.jpg"
+  },
+  "24/10/2026": {
+    "weather": "Sunny",
+    "worker": 30
+  },
+  "26/10/2026": {
+    "weather": "Sunny",
+    "worker": 29,
+    "file": "1792972685908_1506833805674878003_g5241664229805465444_2c30afb7a91b5c88c46d0e83ddd21eb4.jpg"
+  },
+  "27/10/2026": {
+    "weather": "Sunny",
+    "worker": 28,
+    "file": "1793059046315_1506833805674878003_g5241664229805465444_0a8170bacdad2b43c70359728e9ddb68.jpg"
+  },
+  "28/10/2026": {
+    "weather": "Sunny",
+    "worker": 7,
+    "file": "1793148203547_1506833805674878003_g5241664229805465444_109fe429e1ce3330469fad311e34a3bb.jpg"
+  },
+  "29/10/2026": {
+    "weather": "Sunny",
+    "worker": 35,
+    "file": "1793234256449_1506833805674878003_g5241664229805465444_8e2c38391f5ab960ac41e4de4b64f390.jpg"
+  },
+  "30/10/2026": {
+    "weather": "Raining",
+    "worker": 7,
+    "file": "1793318866447_1506833805674878003_g5241664229805465444_3ff666ace72f5f24bcedf058bf964fde.jpg"
+  },
+  "31/10/2026": {
+    "weather": "Sunny",
+    "worker": 34,
+    "file": "1793407533644_1506833805674878003_g5241664229805465444_b50a47b17b307c5dfa96b98dd2180841.jpg"
+  },
+  "01/11/2026": {
+    "weather": "Raining",
+    "worker": 34,
+    "file": "1793492394527_1506833805674878003_g5241664229805465444_4184c5a7d9f55f34758e9543b1abcf23.jpg"
+  },
+  "02/11/2026": {
+    "weather": "Sunny",
+    "worker": 34,
+    "file": "1793579513937_1506833805674878003_g5241664229805465444_eba016b07b2fa24954f84e6e44dd4249.jpg"
+  },
+  "03/11/2026": {
+    "weather": "Sunny",
+    "worker": 33,
+    "file": "1793665659983_1506833805674878003_g5241664229805465444_86b3607ebcd885e9c8f9284b6ee0e7c8.jpg"
+  },
+  "04/11/2026": {
+    "weather": "Sunny",
+    "worker": 34,
+    "file": "1793750901904_1506833805674878003_g5241664229805465444_6205e272c08da91df55e8e9d8897b8b6.jpg"
+  },
+  "05/11/2026": {
+    "weather": "Sunny",
+    "worker": 35,
+    "file": "1793838417198_1506833805674878003_g5241664229805465444_eaa67655538448be00d88d07361aa761.jpg"
+  },
+  "06/11/2026": {
+    "weather": "Sunny",
+    "worker": 34,
+    "file": "1793927187706_1506833805674878003_g5241664229805465444_39c7eeabafca3d85f15705a07dd0009e.jpg"
+  },
+  "07/11/2026": {
+    "weather": "Sunny",
+    "worker": 35,
+    "file": "1794012640159_1506833805674878003_g5241664229805465444_4e237c8bc57e20690883d5ded609d28e.jpg"
+  },
+  "08/11/2026": {
+    "weather": "Sunny",
+    "worker": 40,
+    "file": "1794097872530_1506833805674878003_g5241664229805465444_4a55219321c0c762e728104f39b2d9c4.jpg"
+  },
+  "22/10/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "25/10/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "19/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "20/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "21/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "22/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "24/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "25/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "26/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "27/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "28/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "29/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "30/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "31/08/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "03/09/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "04/09/2026": {
+    "weather": "Normal",
+    "worker": null
+  },
+  "05/09/2026": {
+    "weather": "Normal",
+    "worker": null
+  }
+}
