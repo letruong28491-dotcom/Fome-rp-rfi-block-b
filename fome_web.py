@@ -37524,6 +37524,22 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
                         if not isinstance(c_item, MergedCell):
                             c_item.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
                             c_item.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                else:
+                    # Sheet 0001-1 (Báo cáo sửa chữa mối bọc):
+                    # Rows 8..11: Thông số vật tư căn lề trái
+                    align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                    font_reg_10 = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
+                    for r_m in range(8, 12):
+                        c_item = ws.cell(row=r_m + off, column=1)
+                        if not isinstance(c_item, MergedCell):
+                            c_item.alignment = align_left_wrap
+                            c_item.font = font_reg_10
+                    # Row 14: Đảm bảo số mối có hậu tố R1 (ví dụ KP39-W23R1)
+                    c_j = ws.cell(row=14 + off, column=10)
+                    if not isinstance(c_j, MergedCell) and c_j.value is not None:
+                        val_j = str(c_j.value).strip()
+                        if val_j and not val_j.startswith("=") and not val_j.endswith("R1"):
+                            c_j.value = f"{val_j}R1"
 
             if (ws.title == paged_sheet_title or ws.title == "RP-FTI"):
 
@@ -39657,21 +39673,12 @@ def generate_rp_workbook(
 
                 cell = sheet.cell(row=j_row, column=col)
 
-
-
-
-
-
-
                 if i < min(total_items, sheet_capacity):
-
-
-
-
-
-
-
-                    cell.value = str(items[i])
+                    val = str(items[i]).strip()
+                    if report_type == "FTI" and s_name == "0001-1":
+                        if not val.endswith("R1"):
+                            val = f"{val}R1"
+                    cell.value = val
 
 
 
