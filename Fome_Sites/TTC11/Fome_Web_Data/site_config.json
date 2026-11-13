@@ -5,14 +5,58 @@
   "sources_meta": {
     "controlog": {
       "original_filename": "Controlog WM TTC11.xlsx",
-      "size": 672816,
-      "updated_at": "09/11/2026 14:32:37",
+      "size": 683268,
+      "updated_at": "12/11/2026 16:14:19",
       "updated_by": "Quản Trị Viên (Lê Trường)"
     },
     "rfi_data": {
       "original_filename": "FORM CHOOSE REPORT Rev 8_ORIGINAL- TTC11.xlsx",
-      "size": 635922,
-      "updated_at": "09/11/2026 14:32:53",
+      "size": 638778,
+      "updated_at": "12/11/2026 16:14:28",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    },
+    "template_rp_fti": {
+      "original_filename": "8.RP -FTI.xlsx",
+      "size": 361606,
+      "updated_at": "13/11/2026 11:00:06",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    },
+    "template_rp_hti": {
+      "original_filename": "9.RP -HTI.xlsx",
+      "size": 694451,
+      "updated_at": "13/11/2026 13:35:13",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    },
+    "template_rp_mtr": {
+      "original_filename": "10.RP -MTR.xlsx",
+      "size": 692037,
+      "updated_at": "13/11/2026 14:47:14",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    }
+  },
+  "templates_meta": {
+    "rp_fti": {
+      "family": "rp",
+      "type": "FTI",
+      "original_filename": "8.RP -FTI.xlsx",
+      "size": 361606,
+      "updated_at": "13/11/2026 11:00:06",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    },
+    "rp_hti": {
+      "family": "rp",
+      "type": "HTI",
+      "original_filename": "9.RP -HTI.xlsx",
+      "size": 694451,
+      "updated_at": "13/11/2026 13:35:13",
+      "updated_by": "Quản Trị Viên (Lê Trường)"
+    },
+    "rp_mtr": {
+      "family": "rp",
+      "type": "MTR",
+      "original_filename": "10.RP -MTR.xlsx",
+      "size": 692037,
+      "updated_at": "13/11/2026 14:47:14",
       "updated_by": "Quản Trị Viên (Lê Trường)"
     }
   }

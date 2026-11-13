@@ -9199,6 +9199,24 @@ def replace_area_with_location(ws) -> None:
 
 
 
+def format_pipe_length_3dec(text: object) -> object:
+    """Format độ dài ống L=...mm trong chuỗi mô tả để luôn có đúng 3 chữ số thập phân sau dấu '.' (ví dụ 12.170mm)."""
+    if not isinstance(text, str) or "L=" not in text:
+        return text
+
+    def _repl(match: re.Match) -> str:
+        prefix = match.group(1)
+        val_str = match.group(2)
+        unit = match.group(3) or ""
+        try:
+            val_f = float(val_str.replace(",", "."))
+            return f"{prefix}{val_f:.3f}{unit}"
+        except Exception:
+            return match.group(0)
+
+    return re.sub(r"(L\s*=\s*)(\d+(?:[.,]\d+)?)\s*(mm\b|m\b)?", _repl, text, flags=re.IGNORECASE)
+
+
 def format_rp_multiline_slash(val: object) -> str | None:
 
 
@@ -9351,6 +9369,8 @@ def format_rp_multiline_slash(val: object) -> str | None:
 
 
 
+    if "L=" in s:
+        s = format_pipe_length_3dec(s)
     return re.sub(r"\s*/\s*", "/\n", s)
 
 
@@ -37526,7 +37546,7 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
                             c_item.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
                 else:
                     # Sheet 0001-1 (Báo cáo sửa chữa mối bọc):
-                    # Rows 8..11: Thông số vật tư căn lề trái
+                    # Rows 8..11: Thông số vật tư căn lề trái (cả tên vật tư, nhãn số lô và giá trị số lô)
                     align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
                     font_reg_10 = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
                     for r_m in range(8, 12):
@@ -37534,6 +37554,15 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
                         if not isinstance(c_item, MergedCell):
                             c_item.alignment = align_left_wrap
                             c_item.font = font_reg_10
+                        c_g = ws.cell(row=r_m + off, column=7)
+                        if not isinstance(c_g, MergedCell):
+                            c_g.alignment = align_left_wrap
+                            c_g.font = font_reg_10
+                        for val_col in [10, 11]:
+                            c_v = ws.cell(row=r_m + off, column=val_col)
+                            if not isinstance(c_v, MergedCell) and c_v.value is not None:
+                                c_v.alignment = align_left_wrap
+                                c_v.font = font_reg_10
                     # Row 14: Đảm bảo số mối có hậu tố R1 (ví dụ KP39-W23R1)
                     c_j = ws.cell(row=14 + off, column=10)
                     if not isinstance(c_j, MergedCell) and c_j.value is not None:
@@ -37751,9 +37780,12 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
         elif report_type == "MTR" and (ws.title == paged_sheet_title or ws.title == "0001"):
 
-
-
             ws.print_area = f"A1:L{22 * n_pages}"
+            for r_idx in range(1, min(ws.max_row + 1, 22 * n_pages + 1)):
+                for c_idx in range(1, min(ws.max_column + 1, 15)):
+                    c_obj = ws.cell(row=r_idx, column=c_idx)
+                    if isinstance(c_obj.value, str) and "L=" in c_obj.value:
+                        c_obj.value = format_pipe_length_3dec(c_obj.value)
 
 
 
@@ -41462,6 +41494,8 @@ def generate_rp_workbook(
 
 
                         cell.value = val
+                        if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                            cell.value = format_pipe_length_3dec(cell.value)
 
 
 
@@ -41613,6 +41647,8 @@ def generate_rp_workbook(
 
 
 
+                    if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                        cell.value = format_pipe_length_3dec(cell.value)
                     if layout and t_start <= r <= t_end:
 
 
@@ -42552,6 +42588,8 @@ def generate_rp_workbook(
 
 
                                 dst_cell.value = val
+                                if report_type == "MTR" and isinstance(dst_cell.value, str) and "L=" in dst_cell.value:
+                                    dst_cell.value = format_pipe_length_3dec(dst_cell.value)
 
 
 
@@ -44718,6 +44756,8 @@ def generate_rp_workbook(
 
 
                         cell.value = val
+                        if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                            cell.value = format_pipe_length_3dec(cell.value)
 
 
 
