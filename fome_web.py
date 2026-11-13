@@ -38073,7 +38073,14 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                                    img_bytes = io.BytesIO(b_img.ref.getvalue())
+                                    if hasattr(b_img, "_data") and callable(b_img._data):
+                                        img_bytes = io.BytesIO(b_img._data())
+                                    elif hasattr(b_img.ref, "getvalue"):
+                                        img_bytes = io.BytesIO(b_img.ref.getvalue())
+                                    elif isinstance(b_img.ref, (str, bytes)):
+                                        img_bytes = io.BytesIO(open(b_img.ref, "rb").read() if isinstance(b_img.ref, str) else b_img.ref)
+                                    else:
+                                        img_bytes = io.BytesIO(b_img.ref)
 
 
 
@@ -38153,79 +38160,30 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-        if report_type == "DIC":
-
-
-
+        if report_type in {"DIC", "FTI", "HTI"}:
             has_dual_logo = any(img.width == 280 for img in getattr(ws, "_images", []))
-
-
-
             if not has_dual_logo:
-
-
-
                 base_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
-
-
-
                 logo_file = os.path.join(base_dir, "Fome_Web_Data", "ptsc_lilama_logo.png")
-
-
-
                 if not os.path.exists(logo_file):
-
-
-
                     logo_file = os.path.join("Fome_Web_Data", "ptsc_lilama_logo.png")
-
-
-
                 if os.path.exists(logo_file):
-
-
-
                     from openpyxl.drawing.image import Image as OpenPyXLImage
-
-
-
-                    from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
-
-
-
+                    from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor, AnchorMarker
                     from openpyxl.drawing.xdr import XDRPositiveSize2D
-
-
-
-                    keep_imgs = [img for img in getattr(ws, "_images", []) if img.width != 77]
-
-
-
+                    keep_imgs = [img for img in getattr(ws, "_images", []) if img.width not in {77, 158}]
                     dual_img = OpenPyXLImage(logo_file)
-
-
-
                     dual_img.width = 280
-
-
-
                     dual_img.height = 40
-
-
-
-                    marker = AnchorMarker(col=14, colOff=120000, row=0, rowOff=60000)
-
-
-
-                    size = XDRPositiveSize2D(cx=280 * 9525, cy=40 * 9525)
-
-
-
-                    dual_img.anchor = OneCellAnchor(_from=marker, ext=size)
-
-
-
-                    ws._images = keep_imgs + [dual_img]
+                    if report_type == "DIC":
+                        marker = AnchorMarker(col=14, colOff=120000, row=0, rowOff=60000)
+                        size = XDRPositiveSize2D(cx=280 * 9525, cy=40 * 9525)
+                        dual_img.anchor = OneCellAnchor(_from=marker, ext=size)
+                    else:
+                        frm = AnchorMarker(col=10, colOff=130629, row=0, rowOff=78377)
+                        to_m = AnchorMarker(col=14, colOff=97972, row=0, rowOff=596537)
+                        dual_img.anchor = TwoCellAnchor(_from=frm, to=to_m, editAs="twoCell")
+                    ws._images = [dual_img] + keep_imgs
 
 
 
