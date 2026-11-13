@@ -32426,269 +32426,72 @@ def format_standard_rp_header(
 
 
 
-        if ws.title == "0001-1":
-
-
-
-
-
-
-
+        if ws.title == "0001-1" and report_type == "FTI":
             thin_s = Side(style="thin")
-
-
-
-
-
-
-
             no_s = Side(style=None)
-
-
-
-
-
-
-
             for r_m in range(8, 12):
-
-
-
-
-
-
-
                 r_idx = r_m + offset
 
+                # Fetch batch value before fixing any merges
+                c10_val = ws.cell(r_idx, 10).value
+                c11_val = ws.cell(r_idx, 11).value
+                batch_val = c11_val if c11_val not in (None, "") else c10_val
 
-
-
-
-
-
-                # Fix merged range J:N -> J:O
-
-
-
-
-
-
-
-                for rng in list(ws.merged_cells.ranges):
-
-
-
-
-
-
-
-                    if rng.min_row == r_idx and rng.min_col == 10 and rng.max_col == 14:
-
-
-
-
-
-
-
-                        ws.unmerge_cells(str(rng))
-
-
-
-
-
-
-
-                already_merged_15 = any(
-
-
-
-
-
-
-
-                    rng.min_row == r_idx and rng.min_col == 10 and rng.max_col == 15
-
-
-
-
-
-
-
+                # Check template layout:
+                # TTC11: G:J (cols 7..10) for label, K:O (cols 11..15) for value (val in K)
+                # TTC15/15A: G:I (cols 7..9) for label, J:O (cols 10..15) for value (val in J)
+                has_gj = any(
+                    rng.min_row == r_idx and rng.min_col == 7 and rng.max_col == 10
                     for rng in ws.merged_cells.ranges
-
-
-
-
-
-
-
                 )
 
+                if has_gj:
+                    val_col = 11
+                    # Clean up any colliding J:N (10..14) or J:O (10..15) that overlap with G:J
+                    for rng in list(ws.merged_cells.ranges):
+                        if rng.min_row == r_idx and rng.min_col == 10 and rng.max_col in (14, 15):
+                            ws.unmerge_cells(str(rng))
+                        elif rng.min_row == r_idx and rng.min_col == 11 and rng.max_col == 14:
+                            ws.unmerge_cells(str(rng))
+                    # Ensure G:J is intact
+                    if not any(rng.min_row == r_idx and rng.min_col == 7 and rng.max_col == 10 for rng in ws.merged_cells.ranges):
+                        ws.merge_cells(start_row=r_idx, start_column=7, end_row=r_idx, end_column=10)
+                    # Ensure K:O is merged
+                    if not any(rng.min_row == r_idx and rng.min_col == 11 and rng.max_col == 15 for rng in ws.merged_cells.ranges):
+                        ws.merge_cells(start_row=r_idx, start_column=11, end_row=r_idx, end_column=15)
+                else:
+                    val_col = 10
+                    # TTC15/15A layout: Fix J:N (10..14) -> J:O (10..15)
+                    for rng in list(ws.merged_cells.ranges):
+                        if rng.min_row == r_idx and rng.min_col == 10 and rng.max_col == 14:
+                            ws.unmerge_cells(str(rng))
+                    if not any(rng.min_row == r_idx and rng.min_col == 10 and rng.max_col == 15 for rng in ws.merged_cells.ranges):
+                        ws.merge_cells(start_row=r_idx, start_column=10, end_row=r_idx, end_column=15)
 
+                # Restore batch value to val_col
+                if batch_val not in (None, ""):
+                    ws.cell(r_idx, val_col).value = batch_val
 
-
-
-
-
-                if not already_merged_15:
-
-
-
-
-
-
-
-                    ws.merge_cells(start_row=r_idx, start_column=10, end_row=r_idx, end_column=15)
-
-
-
-
-
-
-
-                # Left alignment
-
-
-
-
-
-
-
+                # Left alignment & font
                 c_a = ws.cell(row=r_idx, column=1)
-
-
-
-
-
-
-
                 if not isinstance(c_a, MergedCell):
-
-
-
-
-
-
-
                     c_a.alignment = align_left
-
-
-
-
-
-
-
                 c_g = ws.cell(row=r_idx, column=7)
-
-
-
-
-
-
-
                 if not isinstance(c_g, MergedCell):
-
-
-
-
-
-
-
                     c_g.alignment = align_left
+                c_v = ws.cell(row=r_idx, column=val_col)
+                if not isinstance(c_v, MergedCell):
+                    c_v.alignment = align_left
+                    c_v.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
 
-
-
-
-
-
-
-                c_j = ws.cell(row=r_idx, column=10)
-
-
-
-
-
-
-
-                if not isinstance(c_j, MergedCell):
-
-
-
-
-
-
-
-                    c_j.alignment = align_left
-
-
-
-
-
-
-
-                # Outer border only (cols 1..15, rows 8..11)
-
-
-
-
-
-
-
+                # Borders (cols 1..15, rows 8..11)
                 for col_idx in range(1, 16):
-
-
-
-
-
-
-
                     cell = ws.cell(row=r_idx, column=col_idx)
-
-
-
-
-
-
-
                     t = thin_s if r_m == 8 else no_s
-
-
-
-
-
-
-
                     b = thin_s if r_m == 11 else no_s
-
-
-
-
-
-
-
-                    l = thin_s if col_idx == 1 else no_s
-
-
-
-
-
-
-
+                    l = thin_s if col_idx in (1, 7, val_col) else no_s
                     r_border = thin_s if col_idx == 15 else no_s
-
-
-
-
-
-
-
                     cell.border = Border(left=l, right=r_border, top=t, bottom=b)
-
-
-
-
-
-
 
     if report_type == "SPI" and ws.title != "0001-1":
 
@@ -35845,6 +35648,7 @@ def apply_template_rich_text(
 
 
     weld_map_no: str,
+    page_offset: int = 0,
 
 
 
@@ -36210,7 +36014,8 @@ def apply_template_rich_text(
 
 
 
-                        set_text(len(runs) - 1, re.sub(r"\d+(\s*)$", f"{p}\\1", last))
+                        p_display = (p + page_offset) if page_offset else ((num_pages + 1) if ws.title == "0001-1" else p)
+                        set_text(len(runs) - 1, re.sub(r"\d+(\s*)$", f"{p_display}\\1", last))
 
 
 
@@ -37698,89 +37503,27 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
 
-                # Row 11: A11 chữ thường, không in đậm, không nghiêng (bold=False, italic=False), 10pt
-
-
-
-                c_11 = ws.cell(row=11 + off, column=1)
-
-
-
-                if not isinstance(c_11, MergedCell):
-
-
-
-                    c_11.value = "Kiểm tra kích thước lớp bọc HTLP80-HP/\nCheck dimension of HTLP80-HP"
-
-
-
-                    c_11.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
-
-
-
-                    c_11.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-
-
-
-
-
-
-                # Row 15: strictly preserve "Kiểm tra khuyết tật lớp bọc/Holiday Detection test", regular 10pt
-
-
-
-                c_15 = ws.cell(row=15 + off, column=1)
-
-
-
-                if not isinstance(c_15, MergedCell):
-
-
-
-                    c_15.value = "Kiểm tra khuyết tật lớp bọc/Holiday Detection test"
-
-
-
-                    c_15.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
-
-
-
-                    c_15.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-
-
-
-
-
-
-                # Rows 12..16: ensure left aligned, 10pt regular for column 1 (except row 11)
-
-
-
-                for r_item in [12, 13, 14, 16]:
-
-
-
-                    c_item = ws.cell(row=r_item + off, column=1)
-
-
-
-                    if not isinstance(c_item, MergedCell):
-
-
-
-                        c_item.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
-
-
-
-                        c_item.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-
-
-
-
-
+                if ws.title != "0001-1":
+                    # Row 11: A11 chữ thường, không in đậm, không nghiêng (bold=False, italic=False), 10pt
+                    c_11 = ws.cell(row=11 + off, column=1)
+                    if not isinstance(c_11, MergedCell):
+                        c_11.value = "Kiểm tra kích thước lớp bọc HTLP80-HP/\nCheck dimension of HTLP80-HP"
+                        c_11.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
+                        c_11.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+                    # Row 15: strictly preserve "Kiểm tra khuyết tật lớp bọc/Holiday Detection test", regular 10pt
+                    c_15 = ws.cell(row=15 + off, column=1)
+                    if not isinstance(c_15, MergedCell):
+                        c_15.value = "Kiểm tra khuyết tật lớp bọc/Holiday Detection test"
+                        c_15.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
+                        c_15.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+                    # Rows 12..16: ensure left aligned, 10pt regular for column 1 (except row 11)
+                    for r_item in [12, 13, 14, 16]:
+                        c_item = ws.cell(row=r_item + off, column=1)
+                        if not isinstance(c_item, MergedCell):
+                            c_item.font = Font(name="Times New Roman", size=10.0, bold=False, italic=False, color="000000")
+                            c_item.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
             if (ws.title == paged_sheet_title or ws.title == "RP-FTI"):
 
@@ -45260,6 +45003,7 @@ def generate_rp_workbook(
 
 
                 num_pages=num_pages if s_name == target_sheet.title else 1,
+                page_offset=num_pages if s_name == "0001-1" else 0,
 
 
 
