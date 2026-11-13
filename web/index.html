@@ -1912,7 +1912,7 @@
 
         </div>
 
-        <button type="submit" class="btn-login" id="btn-submit-register">ĐĂNG KÝ VÀ VÀO ỨNG DỤNG NGAY</button>
+        <button type="submit" class="btn-login" id="btn-submit-register">GỬI YÊU CẦU ĐĂNG KÝ (CHỜ DUYỆT)</button>
 
       </form>
 
@@ -5142,17 +5142,15 @@
         const data = await res.json();
 
         if (!res.ok || !data.success) {
-
           if (errorEl) {
-
-            errorEl.textContent = data.error || "Tên đăng nhập hoặc mật khẩu không chính xác.";
-
+            const errText = data.error || "Tên đăng nhập hoặc mật khẩu không chính xác.";
+            const isPending = errText.includes("CHỜ PHÊ DUYỆT") || errText.includes("chờ phê duyệt");
+            errorEl.innerHTML = isPending
+              ? `<div style="line-height:1.45; padding: 2px 0;">⏳ <strong>${escapeHtml(errText)}</strong></div>`
+              : escapeHtml(errText);
             errorEl.style.display = "block";
-
           }
-
           return;
-
         }
 
         currentUser = data.user;
@@ -5408,67 +5406,40 @@
         const data = await res.json();
 
         if (!res.ok || !data.success) {
-
           loginErrorEl.textContent = data.error || "Không thể đăng ký tài khoản.";
-
           loginErrorEl.style.display = "block";
-
           return;
-
         }
 
-        if (data.token) {
-
-          localStorage.setItem("fome_token", data.token);
-
-        }
-
-        localStorage.setItem("fome_last_email", email);
-
-        if (data.user) {
-
-          currentUser = data.user;
-
-          try {
-
-            localStorage.setItem("fome_user", JSON.stringify(currentUser));
-
-          } catch (e) {}
-
-          renderUserBar(currentUser);
-
-          hideLoginModal();
-
-          showMessage(data.message || "Đăng ký thành công!", "success");
-
-          await loadSites();
-
-          await loadStatus();
-
-          await loadProgress();
-
-          return;
-
-        }
-
-        loginSuccessEl.innerHTML = `<strong>✅ ${data.message}</strong>`;
-
-        loginSuccessEl.style.display = "block";
-
+        // Đăng ký thành công - Chờ Admin phê duyệt
         registerFormEl.reset();
 
+        // Chuyển sang Tab Đăng nhập và điền sẵn Gmail vừa đăng ký
+        tabBtnLogin.click();
+        const usernameInput = $("login-username");
+        if (usernameInput) {
+          usernameInput.value = email;
+        }
+        const passwordInput = $("login-password");
+        if (passwordInput) {
+          passwordInput.value = "";
+          passwordInput.focus();
+        }
+
+        loginSuccessEl.innerHTML = `
+          <div style="line-height: 1.5; padding: 4px 0;">
+            <strong style="color: #065f46;">✅ ĐĂNG KÝ TÀI KHOẢN THÀNH CÔNG!</strong><br>
+            <span>Tài khoản <b>${escapeHtml(email)}</b> đang ở trạng thái <b>CHỜ PHÊ DUYỆT</b>.</span><br>
+            <span style="font-size: 12.5px; color: #475569;">Vui lòng đợi hoặc liên hệ Quản trị viên (Admin) để kích hoạt tài khoản trước khi đăng nhập.</span>
+          </div>
+        `;
+        loginSuccessEl.style.display = "block";
       } catch (err) {
-
         loginErrorEl.textContent = "Lỗi kết nối: " + err.message;
-
         loginErrorEl.style.display = "block";
-
       } finally {
-
         submitBtn.disabled = false;
-
-        submitBtn.textContent = "ĐĂNG KÝ VÀ VÀO ỨNG DỤNG NGAY";
-
+        submitBtn.textContent = "GỬI YÊU CẦU ĐĂNG KÝ (CHỜ DUYỆT)";
       }
 
     });

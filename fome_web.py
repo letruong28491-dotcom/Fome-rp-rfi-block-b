@@ -49840,320 +49840,98 @@ SESSIONS: dict[str, dict[str, object]] = load_sessions()
 
 
 def load_users() -> dict[str, dict[str, object]]:
-
-
-
     if USERS_FILE.exists():
-
-
-
         try:
-
-
-
             with open(USERS_FILE, "r", encoding="utf-8") as f:
-
-
-
                 data = json.load(f)
-
-
-
                 if isinstance(data, dict) and data:
-
-
-
-                    # Remove legacy non-Gmail accounts
-
-
-
                     for old_k in ("ttc11", "ttc15", "ttc15a"):
-
-
-
                         data.pop(old_k, None)
-
-
-
                     modified = False
-
-
-
                     for k, v in data.items():
-
-
-
-                        # Auto-approve so registered users don't get locked out
-
-
-
-                        if v.get("status") in ("pending", None):
-
-
-
-                            v["status"] = "approved"
-
-
-
+                        if not v.get("status"):
+                            v["status"] = "pending"
                             modified = True
-
-
-
                         if not v.get("sites"):
-
-
-
-                            v["sites"] = ["*"]
-
-
-
+                            v["sites"] = ["*"] if v.get("role") == "admin" else ["TTC11"]
                             modified = True
-
-
-
                         if "role" not in v:
-
-
-
-                            v["role"] = "guest"
-
-
-
+                            v["role"] = "qc"
                             modified = True
-
-
-
                     if modified:
-
-
-
                         save_users(data)
-
-
-
                     return data
-
-
-
         except Exception:
-
-
-
             pass
-
-
-
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-
     with open(USERS_FILE, "w", encoding="utf-8") as f:
-
-
-
         json.dump(DEFAULT_USERS, f, ensure_ascii=False, indent=2)
-
-
-
     return DEFAULT_USERS
 
-
-
-
-
-
-
 def save_users(users: dict[str, dict[str, object]]) -> None:
-
-
-
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-
     with open(USERS_FILE, "w", encoding="utf-8") as f:
-
-
-
         json.dump(users, f, ensure_ascii=False, indent=2)
 
-
-
-
-
-
-
 def find_user_by_identity(identity: str) -> tuple[str | None, dict[str, object] | None]:
-
-
-
     clean_id = identity.strip().lower()
-
-
-
+    if not clean_id:
+        return None, None
     users = load_users()
-
-
-
+    # 1. Khớp chính xác key trong users
     if clean_id in users:
-
-
-
         return clean_id, users[clean_id]
-
-
-
     for k, u in users.items():
-
-
-
-        if str(u.get("email", "")).strip().lower() == clean_id:
-
-
-
+        k_clean = str(k).strip().lower()
+        if k_clean == clean_id:
             return k, u
-
-
-
+        email_clean = str(u.get("email", "")).strip().lower()
+        if email_clean == clean_id:
+            return k, u
+        # 2. Khớp theo phần tên trước @ của Gmail (ví dụ: gõ letruong28491 thay vì letruong28491@gmail.com)
+        email_prefix = email_clean.split("@")[0] if "@" in email_clean else ""
+        if email_prefix and email_prefix == clean_id:
+            return k, u
+        k_prefix = k_clean.split("@")[0] if "@" in k_clean else ""
+        if k_prefix and k_prefix == clean_id:
+            return k, u
+        # 3. Khớp theo họ và tên kỹ sư
+        name_clean = str(u.get("name", "")).strip().lower()
+        if name_clean and name_clean == clean_id:
+            return k, u
     return None, None
 
-
-
-
-
-
-
 def authenticate_user(identity: str, password: str) -> tuple[dict[str, object] | None, str]:
-
-
-
     key, u = find_user_by_identity(identity)
-
-
-
-    if not u or u.get("password") != password:
-
-
-
+    if not u:
         return None, "Tên đăng nhập / Gmail hoặc mật khẩu không chính xác."
-
-
-
     
-
-
-
-    status = u.get("status", "approved")
-
-
-
+    u_pwd = str(u.get("password", ""))
+    pwd_input = str(password or "")
+    if u_pwd != pwd_input and u_pwd.strip() != pwd_input.strip():
+        return None, "Tên đăng nhập / Gmail hoặc mật khẩu không chính xác."
+    
+    status = str(u.get("status", "pending")).strip().lower()
     if status == "pending":
-
-
-
-        u["status"] = "approved"
-
-
-
-        if not u.get("sites"):
-
-
-
-            u["sites"] = ["*"]
-
-
-
-        users = load_users()
-
-
-
-        if key in users:
-
-
-
-            users[key]["status"] = "approved"
-
-
-
-            users[key]["sites"] = u["sites"]
-
-
-
-            save_users(users)
-
-
-
-        status = "approved"
-
-
-
+        return None, "Tài khoản của bạn đang CHỜ PHÊ DUYỆT bởi Quản trị viên (Admin). Vui lòng đợi hoặc liên hệ Admin để được kích hoạt trước khi đăng nhập."
     elif status == "rejected":
-
-
-
         return None, "Tài khoản của bạn đã bị từ chối hoặc vô hiệu hóa bởi Quản trị viên."
-
-
-
-
-
-
-
+    elif status != "approved":
+        return None, "Tài khoản chưa được kích hoạt. Vui lòng liên hệ Quản trị viên."
+    
     sites = u.get("sites", [])
-
-
-
     if not sites:
-
-
-
         sites = ["*"]
-
-
-
-
-
-
-
+        
     return {
-
-
-
         "key": key,
-
-
-
         "email": u.get("email", key),
-
-
-
         "username": key,
-
-
-
         "name": u.get("name", key),
-
-
-
         "role": u.get("role", "qc"),
-
-
-
         "sites": sites,
-
-
-
         "status": status
-
-
-
     }, ""
-
-
-
-
-
-
 
 def check_role_permission(user: dict[str, object] | None, allowed_roles: tuple[str, ...]) -> tuple[bool, str]:
 
@@ -51535,7 +51313,7 @@ class FomeHandler(BaseHTTPRequestHandler):
 
 
 
-                status_code = 403 if "từ chối" in err_msg else 401
+                status_code = 403 if ("từ chối" in err_msg or "chờ phê duyệt" in err_msg.lower()) else 401
 
 
 
@@ -51612,296 +51390,62 @@ class FomeHandler(BaseHTTPRequestHandler):
 
 
     def handle_register(self) -> None:
-
-
-
         try:
-
-
-
             length = int(self.headers.get("Content-Length", 0))
-
-
-
             body = self.rfile.read(length).decode("utf-8")
-
-
-
             data = json.loads(body) if body else {}
-
-
-
             email = str(data.get("email", "")).strip().lower()
-
-
-
             name = str(data.get("name", "")).strip()
-
-
-
             password = str(data.get("password", "")).strip()
-
-
-
             requested_sites = data.get("requested_sites", [])
 
-
-
-
-
-
-
             if not email or "@" not in email:
-
-
-
                 self.send_json(400, {"error": "Vui lòng nhập địa chỉ Gmail hợp lệ."})
-
-
-
                 return
-
-
-
             if not name:
-
-
-
                 self.send_json(400, {"error": "Vui lòng nhập họ và tên của bạn."})
-
-
-
                 return
-
-
-
             if len(password) < 6:
-
-
-
                 self.send_json(400, {"error": "Mật khẩu phải có tối thiểu 6 ký tự."})
-
-
-
                 return
-
-
-
-
-
-
 
             users = load_users()
-
-
-
             if email in users or any(u.get("email", "").lower() == email for u in users.values()):
-
-
-
                 self.send_json(400, {"error": f"Địa chỉ Gmail '{email}' đã tồn tại trên hệ thống. Bạn có thể bấm Đăng nhập ngay."})
-
-
-
                 return
 
-
-
-
-
-
-
             requested_role = str(data.get("role", "qc")).strip().lower()
-
-
-
             if requested_role not in ("admin", "qc", "construction", "guest"):
-
-
-
                 requested_role = "qc"
 
-
-
-            
-
-
-
-            allocated_sites = requested_sites if (isinstance(requested_sites, list) and requested_sites) else ["*"]
-
-
-
+            allocated_sites = requested_sites if (isinstance(requested_sites, list) and requested_sites) else ["TTC11"]
             new_user = {
-
-
-
                 "email": email,
-
-
-
                 "name": name,
-
-
-
                 "password": password,
-
-
-
-                "status": "approved",
-
-
-
+                "status": "pending",
                 "role": requested_role,
-
-
-
                 "sites": allocated_sites,
-
-
-
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-
             }
-
-
-
             users[email] = new_user
-
-
-
             save_users(users)
 
-
-
-
-
-
-
-            user_payload = {
-
-
-
-                "key": email,
-
-
-
-                "email": email,
-
-
-
-                "username": email,
-
-
-
-                "name": name,
-
-
-
-                "role": requested_role,
-
-
-
-                "sites": allocated_sites,
-
-
-
-                "status": "approved"
-
-
-
-            }
-
-
-
-            token = hashlib.sha256(f"{email}:{datetime.now().isoformat()}:{random.random()}".encode("utf-8")).hexdigest()
-
-
-
-            SESSIONS[token] = user_payload
-
-
-
-            save_sessions(SESSIONS)
-
-
-
-
-
-
-
-            cookie_val = f"fome_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"
-
-
-
             payload = json.dumps({
-
-
-
                 "success": True,
-
-
-
-                "user": user_payload,
-
-
-
-                "token": token,
-
-
-
-                "message": f"Đăng ký tài khoản thành công! Bạn đã được tự động đăng nhập với vai trò '{requested_role.upper()}'."
-
-
-
+                "status": "pending",
+                "email": email,
+                "message": f"Đăng ký tài khoản thành công! Tài khoản '{email}' đang ở trạng thái CHỜ PHÊ DUYỆT từ Quản trị viên (Admin). Vui lòng đợi hoặc liên hệ Admin để được kích hoạt trước khi đăng nhập."
             }, ensure_ascii=False).encode("utf-8")
-
-
-
             self.send_response(200)
-
-
-
             self.send_header("Content-Type", "application/json; charset=utf-8")
-
-
-
             self.send_header("Content-Length", str(len(payload)))
-
-
-
-            self.send_header("Set-Cookie", cookie_val)
-
-
-
             self.send_header("Cache-Control", "no-store")
-
-
-
             self.send_header("Access-Control-Allow-Origin", "*")
-
-
-
             self.end_headers()
-
-
-
             self.wfile.write(payload)
-
-
-
         except Exception as exc:
-
-
-
             self.send_json(500, {"error": f"Lỗi đăng ký: {exc}"})
-
-
-
-
-
-
 
     def handle_admin_get_users(self) -> None:
 
