@@ -26123,21 +26123,21 @@ def format_ppp_sheet(
 
 
                 if cell.value is not None and str(cell.value).strip() != "":
-
-
-
-
-
-
-
+                    if c_rel == 4:
+                        if isinstance(cell.value, (int, float)):
+                            cell.value = f"L={float(cell.value):.3f}mm"
+                        elif isinstance(cell.value, str):
+                            if "L=" in cell.value:
+                                cell.value = format_pipe_length_3dec(cell.value)
+                            else:
+                                try:
+                                    num_val = float(cell.value.replace(",", "."))
+                                    cell.value = f"L={num_val:.3f}mm"
+                                except Exception:
+                                    pass
+                    elif isinstance(cell.value, str) and "L=" in cell.value:
+                        cell.value = format_pipe_length_3dec(cell.value)
                     cell.font = font_data_10
-
-
-
-
-
-
-
                     cell.alignment = align_center
 
 
@@ -37902,10 +37902,12 @@ def standardize_all_rp_titles_before_save(workbook, report_type: str, page_len: 
 
 
         elif report_type == "PPP" and (ws.title == paged_sheet_title or ws.title == "0001"):
-
-
-
             ws.print_area = f"'0001'!$A$1:$K${22 * n_pages}"
+            for r_idx in range(1, min(ws.max_row + 1, 22 * n_pages + 1)):
+                for c_idx in range(1, min(ws.max_column + 1, 15)):
+                    c_obj = ws.cell(row=r_idx, column=c_idx)
+                    if isinstance(c_obj.value, str) and "L=" in c_obj.value:
+                        c_obj.value = format_pipe_length_3dec(c_obj.value)
 
 
 
@@ -41452,7 +41454,7 @@ def generate_rp_workbook(
 
 
                         cell.value = val
-                        if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                        if report_type in {"MTR", "PPP"} and isinstance(cell.value, str) and "L=" in cell.value:
                             cell.value = format_pipe_length_3dec(cell.value)
 
 
@@ -41605,7 +41607,7 @@ def generate_rp_workbook(
 
 
 
-                    if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                    if report_type in {"MTR", "PPP"} and isinstance(cell.value, str) and "L=" in cell.value:
                         cell.value = format_pipe_length_3dec(cell.value)
                     if layout and t_start <= r <= t_end:
 
@@ -42546,7 +42548,7 @@ def generate_rp_workbook(
 
 
                                 dst_cell.value = val
-                                if report_type == "MTR" and isinstance(dst_cell.value, str) and "L=" in dst_cell.value:
+                                if report_type in {"MTR", "PPP"} and isinstance(dst_cell.value, str) and "L=" in dst_cell.value:
                                     dst_cell.value = format_pipe_length_3dec(dst_cell.value)
 
 
@@ -44714,7 +44716,7 @@ def generate_rp_workbook(
 
 
                         cell.value = val
-                        if report_type == "MTR" and isinstance(cell.value, str) and "L=" in cell.value:
+                        if report_type in {"MTR", "PPP"} and isinstance(cell.value, str) and "L=" in cell.value:
                             cell.value = format_pipe_length_3dec(cell.value)
 
 
