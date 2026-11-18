@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  fome-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fome-web
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - FOME_WEB_HOST=0.0.0.0
+      - PORT=8765
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Luu tru du lieu ben vung, khong bi mat khi deploy phien ban moi tren Coolify / VPS
+      - ./Fome_Web_Data:/app/Fome_Web_Data
+      - ./Fome_Sites:/app/Fome_Sites
+      - ./Fome_Web_Output:/app/Fome_Web_Output

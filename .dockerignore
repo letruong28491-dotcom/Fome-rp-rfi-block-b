@@ -3,6 +3,12 @@ dist/
 *.spec
 .git/
 FOME_PORTABLE_CHAY_NGAY/
-FOME_PORTABLE_v1.0.zip
+*.zip
+*.rar
+*.exe
+cloudflared.exe
 __pycache__/
 *.pyc
+scratch/
+.system_generated/
+
